@@ -1,5 +1,5 @@
 
-# CANable Makefile (from normaldotcom, modified by ElmüSoft)
+# CANable Makefile (from normaldotcom, modified by ElmÃ¼Soft)
 # https://netcult.ch/elmue/CANable Firmware Update
 
 #######################################
@@ -22,7 +22,8 @@ BUILD_DIR = Build_$(TARGET_MCU)_$(TARGET_FIRMWARE)_$(TARGET_BOARD)
 # Example: Trunk = "STM32G431_Slcan2.5_Multiboard_0x250914"
 BUILD_TRUNK = $(BUILD_DIR)/$(TARGET_FILE)_$(FIRMWARE_VERSION)
 
-# directory to place modified template files
+# Per-chip configuration: contains only the project-specific files that
+# genuinely differ from chip to chip and aren't supplied by upstream
 CONFIG_DIR = STM32/$(TARGET_MCU)_Config
 
 # location of the linker script
@@ -58,22 +59,26 @@ endif
 # build configuration
 #######################################
 
-# core and CPU type for Cortex M0
-# ARM core type (CORE_M0, CORE_M3)
-#CORE = CORE_M4F
-
-# ARM CPU type (cortex-m0, cortex-m3)
+# ARM CPU type
 CPU = cortex-m4
 
 # where to build STM32Cube
 CUBELIB_BUILD_DIR = $(BUILD_DIR)/STM32Cube
 
-# various paths within the STmicro library
-DRIVER_PATH = STM32/STM32G4xx_HAL_Driver
+# Paths into the upstream ST submodules
+# After cloning this repo, run:
+#     git submodule update --init --recursive
+DRIVER_PATH    = STM32/stm32g4xx_hal_driver
+CMSIS_DEV_PATH = STM32/cmsis_device_g4
+
+# Friendly error if the user forgot to init submodules.
+ifeq ($(wildcard $(DRIVER_PATH)/Inc/.),)
+    $(error $(DRIVER_PATH) is empty. Run: git submodule update --init --recursive)
+endif
 
 # includes for gcc
 INCLUDES  = -ISTM32/CMSIS/Include
-INCLUDES += -ISTM32/CMSIS/Device
+INCLUDES += -I$(CMSIS_DEV_PATH)/Include
 INCLUDES += -I$(DRIVER_PATH)/Inc
 INCLUDES += -I$(CONFIG_DIR)
 INCLUDES += -ISource
@@ -109,9 +114,9 @@ CUBELIB = $(CUBELIB_BUILD_DIR)/libstm32cube.a
 
 # List of stm32 driver objects
 # The HAL driver comes with some template files that are not meant to be compiled, like stm32g4xx_hal_timebase_tim_template.c
-# STM did not put these templates into a separate subdirectory. If we filter them out here, this allows 
+# STM did not put these templates into a separate subdirectory. If we filter them out here, this allows
 # building against an external driver directory without further modification.
-CUBELIB_DRIVER_OBJS = $(addprefix $(CUBELIB_BUILD_DIR)/, $(patsubst %.c, %.o, $(notdir $(filter-out %/*_template.c,$(wildcard $(DRIVER_PATH)/Src/*.c)))))
+CUBELIB_DRIVER_OBJS = $(addprefix $(CUBELIB_BUILD_DIR)/, $(patsubst %.c, %.o, $(filter-out %_template.c, $(notdir $(wildcard $(DRIVER_PATH)/Src/*.c)))))
 
 # shortcut for building core library (make cubelib)
 cubelib: $(CUBELIB)
@@ -175,11 +180,17 @@ $(BUILD_TRUNK).elf: $(OBJECTS) $(FIRM_OBJECTS) $(CUBELIB)
 $(BUILD_DIR)/%.o: Source/%.c | $(BUILD_DIR)
 	$(CC) $(CFLAGS) -c -o $@ $^
 
-$(BUILD_DIR)/%.o: $(CONFIG_DIR)/%.c | $(BUILD_DIR)
-	$(CC) $(CFLAGS) -c -o $@ $^
+# CMSIS template files come from the cmsis_device_g4 submodule
+# Filenames inside the submodule are lowercase while TARGET_MCU is mixed case
+TARGET_MCU_LC := $(shell echo $(TARGET_MCU) | tr A-Z a-z)
+STARTUP_S      = $(CMSIS_DEV_PATH)/Source/Templates/gcc/startup_$(TARGET_MCU_LC).s
+SYSTEM_C_PATH  = $(CMSIS_DEV_PATH)/Source/Templates/system_stm32g4xx.c
 
-$(BUILD_DIR)/%.o: $(CONFIG_DIR)/%.s | $(BUILD_DIR)
-	$(CC) $(CFLAGS) -c -o $@ $^
+$(BUILD_DIR)/startup_$(TARGET_MCU).o: $(STARTUP_S) | $(BUILD_DIR)
+	$(CC) $(CFLAGS) -c -o $@ $<
+
+$(BUILD_DIR)/system_stm32g4xx.o: $(SYSTEM_C_PATH) | $(BUILD_DIR)
+	$(CC) $(CFLAGS) -c -o $@ $<
 
 $(BUILD_DIR):
 	$(MKDIR) $@

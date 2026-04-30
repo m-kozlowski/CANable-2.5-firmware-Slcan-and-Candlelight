@@ -27,6 +27,30 @@ https://netcult.ch/elmue/CANable%20Firmware%20Update
 
 ________________________
 
+## Building
+
+The STM32 HAL Driver and CMSIS Device headers are pulled in as git submodules
+from STMicroelectronics' upstream repos rather than vendored. After cloning,
+run:
+
+```sh
+git submodule update --init --recursive
+```
+
+Or clone with `--recurse-submodules` in one step:
+
+```sh
+git clone --recurse-submodules <repo-url>
+```
+
+Then build any of the `Make_*` board files, e.g.:
+
+```sh
+make -s -f Make_G431_Slcan_Multiboard
+```
+
+________________________
+
 Latest Updates:
 You find the version history here:
 
