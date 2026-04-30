@@ -75,7 +75,90 @@ bool system_init(void)
     if (HAL_Init() != HAL_OK)
       return false;
 
-#if defined(STM32G431xx) || defined(STM32G473xx)
+#if defined(STM32G0B1xx)
+    // ----------------- STM32G0B1CBT6 (WeAct USB2CANFDV1) ----------------
+    // 16 MHz HSE -> /2 -> x16 PLL VCO=128 MHz.  PLLR=/2 -> SYSCLK 64 MHz.
+    // PCLK1 = HCLK = 64 MHz feeds FDCAN. USB clock comes from HSI48 + CRS.
+    // G0 has no voltage-scaling boost step and a single APB.
+
+    RCC_OscInitTypeDef RCC_OscInitStruct = {0};
+    RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSE | RCC_OSCILLATORTYPE_HSI48;
+    RCC_OscInitStruct.HSEState       = RCC_HSE_ON;
+    RCC_OscInitStruct.HSI48State     = RCC_HSI48_ON;
+    RCC_OscInitStruct.PLL.PLLState   = RCC_PLL_ON;
+    RCC_OscInitStruct.PLL.PLLSource  = RCC_PLLSOURCE_HSE;
+    #if HSE_VALUE == 16000000
+        RCC_OscInitStruct.PLL.PLLM   = RCC_PLLM_DIV2;   // 16 MHz / 2 = 8 MHz PLL input
+        RCC_OscInitStruct.PLL.PLLN   = 16;              // 8 * 16 = 128 MHz VCO
+    #elif HSE_VALUE == 8000000
+        RCC_OscInitStruct.PLL.PLLM   = RCC_PLLM_DIV1;   // 8 MHz PLL input
+        RCC_OscInitStruct.PLL.PLLN   = 16;              // 128 MHz VCO
+    #else
+        #error "Unsupported HSE_VALUE for STM32G0B1xx; add a branch in system.c"
+    #endif
+    RCC_OscInitStruct.PLL.PLLP       = RCC_PLLP_DIV2;   // 64 MHz (unused outside ADC)
+    RCC_OscInitStruct.PLL.PLLQ       = RCC_PLLQ_DIV2;   // 64 MHz (unused: USB on HSI48)
+    RCC_OscInitStruct.PLL.PLLR       = RCC_PLLR_DIV2;   // 64 MHz SYSCLK
+    if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK)
+        return false;
+
+    // Above 48 MHz on G0 needs 2 wait states (RM0444 Table 8).
+    RCC_ClkInitTypeDef RCC_ClkInitStruct = {0};
+    RCC_ClkInitStruct.ClockType      = RCC_CLOCKTYPE_SYSCLK | RCC_CLOCKTYPE_HCLK | RCC_CLOCKTYPE_PCLK1;
+    RCC_ClkInitStruct.SYSCLKSource   = RCC_SYSCLKSOURCE_PLLCLK;
+    RCC_ClkInitStruct.AHBCLKDivider  = RCC_SYSCLK_DIV1;     // HCLK  = 64 MHz
+    RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV1;       // PCLK1 = 64 MHz
+    if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_2) != HAL_OK)
+        return false;
+
+    RCC_PeriphCLKInitTypeDef RCC_PeriphClkInit = {0};
+    RCC_PeriphClkInit.PeriphClockSelection = RCC_PERIPHCLK_USB | RCC_PERIPHCLK_FDCAN;
+    RCC_PeriphClkInit.UsbClockSelection    = RCC_USBCLKSOURCE_HSI48;
+    RCC_PeriphClkInit.FdcanClockSelection  = RCC_FDCANCLKSOURCE_PCLK1;   // 64 MHz
+    if (HAL_RCCEx_PeriphCLKConfig(&RCC_PeriphClkInit) != HAL_OK)
+        return false;
+
+    // CRS pulls HSI48 to the host's USB SOF reference (1 kHz).
+    RCC_CRSInitTypeDef pInit = {0};
+    pInit.Prescaler             = RCC_CRS_SYNC_DIV1;
+    pInit.Source                = RCC_CRS_SYNC_SOURCE_USB;
+    pInit.Polarity              = RCC_CRS_SYNC_POLARITY_RISING;
+    pInit.ReloadValue           = __HAL_RCC_CRS_RELOADVALUE_CALCULATE(48000000, 1000);
+    pInit.ErrorLimitValue       = 34;
+    pInit.HSI48CalibrationValue = 32;
+    HAL_RCCEx_CRSConfig(&pInit);
+
+    HAL_NVIC_SetPriority(SysTick_IRQn, 0, 0);
+    __HAL_RCC_GPIOA_CLK_ENABLE();
+    __HAL_RCC_GPIOB_CLK_ENABLE();
+    __HAL_RCC_GPIOC_CLK_ENABLE();
+    __HAL_RCC_GPIOF_CLK_ENABLE(); // HSE crystal on PF0/PF1
+
+    // CRITICAL FOR USB on STM32G0B1:
+    //
+    // 1. USB transceivers sit behind an isolated supply gated by PWR_CR2.USV
+    //    (reset to 0 by POR). Without it descriptor reads return garbage and
+    //    the device shows up to the host as VID:PID 0000:0000.
+    //
+    // 2. The USB IRQ vector (USB_UCPD1_2_IRQn) is shared with UCPD1 and UCPD2.
+    //    The G0 HAL_PCD_IRQHandler disambiguates by reading
+    //    SYSCFG->IT_LINE_SR[8] bit 2 — but SYSCFG is unclocked after reset,
+    //    so that read returns 0 and the ISR exits immediately. Then the IRQ
+    //    fires again because the USB pending bit is still set -> infinite
+    //    ISR loop, no enumeration. Enabling SYSCFG's APB clock fixes it.
+    __HAL_RCC_PWR_CLK_ENABLE();
+    HAL_PWREx_EnableVddUSB();
+    __HAL_RCC_SYSCFG_CLK_ENABLE();
+
+    canfd_clock = HAL_RCCEx_GetPeriphCLKFreq(RCC_PERIPHCLK_FDCAN); // 64 MHz
+
+    system_init_timestamp();
+    // G0 has no programmable BoR levels in the same form as G4 and a
+    // different OPTR layout; option-byte writes are skipped here.
+    return true;
+
+#elif defined(STM32G431xx) || defined(STM32G473xx)
+    // ---------------- STM32G4 family clock setup -------------------------
     // Configure the main internal regulator output voltage
     HAL_PWREx_ControlVoltageScaling(PWR_REGULATOR_VOLTAGE_SCALE1_BOOST);
 
@@ -172,6 +255,7 @@ bool system_init(void)
     return true;
 
 #elif defined(STM32F072xB)
+    // ---------------- STM32F072CBT6 (bxCAN, classic CAN only) -----------------
     // Boot strategy: 8 MHz HSE -> /1 prediv -> x6 PLL -> 48 MHz SYSCLK.
     // PLL output is also the USB clock source, so no HSI48/CRS plumbing is
     // needed. APB1 (= HCLK on F0) feeds bxCAN at 48 MHz, giving integer

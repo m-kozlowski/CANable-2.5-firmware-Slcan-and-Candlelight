@@ -101,8 +101,11 @@ typedef enum // sent as 8 bit
 //                            to a tighter TQ count in can.c)
 //   MCU_HAS_PROGRAMMABLE_BOR    - OPTR has BOR_LEV bits (G4)
 //   MCU_HAS_PROGRAMMABLE_BOOT0  - OPTR can ignore the BOOT0 pin (G4)
-//   MCU_HAS_FLASH_BANK_FIELD    - FLASH_EraseInitTypeDef has Banks (G4)
+//   MCU_HAS_FLASH_BANK_FIELD    - FLASH_EraseInitTypeDef has Banks (G4/G0)
 //                                 (F0 uses PageAddress instead)
+//   MCU_NEEDS_USB_VOLTAGE_DETECTOR - PWR_CR2.USV must be set for USB (G0B1)
+//   MCU_NEEDS_SYSCFG_FOR_USB_IRQ   - HAL_PCD_IRQHandler reads SYSCFG and
+//                                    needs SYSCFG clocked first (G0)
 //   MCU_HAS_VOLTAGE_SCALING_BOOST  - HAL_PWREx_ControlVoltageScaling exists
 //                                    and "boost" mode is needed (G4)
 //   MCU_DBG_DEVID_LIST     - comma-separated DBGMCU IDCODE values that this
@@ -111,7 +114,7 @@ typedef enum // sent as 8 bit
 //   MCU_DFU_SYSMEM_BASE    - address the ROM bootloader is mapped at (used
 //                            by dfu_switch_to_bootloader)
 //   FLASH_SIZE             - chip flash size; CMSIS doesn't define this on
-//                            F0 so we provide it
+//                            F0/G0 so we provide it
 // ============================================================================
 
 #if defined(STM32G431xx)
@@ -152,6 +155,34 @@ typedef enum // sent as 8 bit
     #define MCU_HAS_FLASH_BANK_FIELD
     #define MCU_HAS_VOLTAGE_SCALING_BOOST
     #define MCU_DFU_SYSMEM_BASE         0x1FFF0000U
+#elif defined(STM32G0B1xx)
+    #include "stm32g0xx.h"
+    #include "stm32g0xx_hal.h"
+    #define CAN_FAMILY_FDCAN
+    // G0B1 uses the newer USB_DRD ("dual role device") block. The PCD HAL
+    // works via PCD_HandleTypeDef.Instance = USB_DRD_FS.
+    #define USB_INSTANCE                USB_DRD_FS
+    // USB_UCPD1_2 vector is shared between USB, UCPD1, UCPD2.
+    #define MCU_USB_NVIC_IRQn           USB_UCPD1_2_IRQn
+    #define MCU_USB_IRQ_HANDLER         USB_UCPD1_2_IRQHandler
+    // FDCAN1 IT0 shares its NVIC vector with TIM16 on G0.
+    #define MCU_FDCAN_NVIC_IRQn         TIM16_FDCAN_IT0_IRQn
+    #define MCU_FDCAN_IRQ_HANDLER       TIM16_FDCAN_IT0_IRQHandler
+    #define MCU_FDCAN_CLOCK_HZ          64000000U
+    #define MCU_NOMINAL_TQ              64U
+    #define MCU_HAS_FLASH_BANK_FIELD
+    #define MCU_NEEDS_USB_VOLTAGE_DETECTOR
+    #define MCU_NEEDS_SYSCFG_FOR_USB_IRQ
+    #define MCU_DFU_SYSMEM_BASE         0x1FFF0000U
+    // G0 HAL omits a combined "all flash errors" macro; build it manually.
+    #define FLASH_FLAG_ALL_ERRORS       ( \
+            FLASH_FLAG_OPERR    | FLASH_FLAG_PROGERR | FLASH_FLAG_WRPERR | \
+            FLASH_FLAG_PGAERR   | FLASH_FLAG_SIZERR  | FLASH_FLAG_PGSERR | \
+            FLASH_FLAG_MISERR   | FLASH_FLAG_FASTERR | FLASH_FLAG_OPTVERR)
+    // CMSIS does not define FLASH_SIZE on G0; the part is 128 KB flash.
+    #ifndef FLASH_SIZE
+        #define FLASH_SIZE              (128U * 1024U)
+    #endif
 #elif defined(STM32F072xB)
     #include "stm32f0xx.h"
     #include "stm32f0xx_hal.h"
@@ -216,6 +247,39 @@ typedef enum // sent as 8 bit
     #define LED_MODE            GPIO_MODE_OUTPUT_PP
     #define LED_ON              GPIO_PIN_SET             // The LED's cathode is connected to ground
     #define LED_OFF             GPIO_PIN_RESET
+#elif defined(WeActUSB2CANFDV1)
+    // WeAct Studio USB2CANFDV1 board (STM32G0B1CBT6, FDCAN1, 16 MHz HSE).
+    // Pinout (from manufacturer's documentation):
+    //   PB8 = FDCAN1 RX, PB9 = FDCAN1 TX (alternate function 3 on G0)
+    //   PA11/PA12 = USB DM/DP (native, no AF)
+    //   PA0 = LED_RXD  (flashes on Rx data)
+    //   PA1 = LED_TXD  (flashes on Tx data)
+    //   PA2 = LED_READY (status: 0.5 s pulse when CAN open, 1 s pulse in DFU)
+    //   PF0/PF1 = HSE 16 MHz crystal
+    //
+    // Note vs other CANable boards: PA0 is the *Rx* indicator on this board,
+    // not Tx. The LED_TX_PINS / LED_RX_PINS swap below reflects that.
+    #define CAN_INTERFACES      FDCAN1
+    #define CAN_PINS            GPIO_PIN_8 | GPIO_PIN_9
+    #define CAN_PORTS           GPIOB
+    #define CAN_ALTERNATES      GPIO_AF3_FDCAN1               // G0 uses AF3 for FDCAN1 on PB8/PB9
+    // -------------------
+    #define LED_TX_PINS         GPIO_PIN_1                    // LED_TXD on PA1
+    #define LED_TX_PORTS        GPIOA
+    #define LED_RX_PINS         GPIO_PIN_0                    // LED_RXD on PA0
+    #define LED_RX_PORTS        GPIOA
+    // Active-high (LED anode driven by GPIO, cathode to GND)
+    #define LED_MODE            GPIO_MODE_OUTPUT_PP
+    #define LED_ON              GPIO_PIN_SET
+    #define LED_OFF             GPIO_PIN_RESET
+    // -------------------
+    // The third LED on PA2 is wired through the LED_READY plumbing in led.c.
+    #define LED_READY_PIN       GPIO_PIN_2
+    #define LED_READY_PORT      GPIOA
+    #define LED_READY_ENABLE    __HAL_RCC_GPIOA_CLK_ENABLE
+    // -------------------
+    #define TERMINATOR_PINS     -1                            // no GPIO-controlled termination on this board
+    #define TERMINATOR_PORTS    GPIOB
 #elif defined(F072_Multiboard)
     // FYSETC CANable / generic STM32F072CBT6 board with SN65HVD230 transceiver.
     // CAN_RX = PB8, CAN_TX = PB9, USB on PA11/PA12 (native), 8 MHz HSE crystal.
@@ -286,7 +350,7 @@ typedef enum // sent as 8 bit
 // Single-channel defaults for boards that don't override the CAN pin map.
 // Each macro is fenced so a board variant block above can override only the
 // ones it cares about (notably the alternate-function number, which differs
-// between FDCAN families: G4 = AF9, F0 (bxCAN) = AF4).
+// between FDCAN families: G4 = AF9, G0 = AF3, F0 (bxCAN) = AF4).
 #ifndef CHANNEL_COUNT
     #define CHANNEL_COUNT       1
 #endif
@@ -298,7 +362,9 @@ typedef enum // sent as 8 bit
     #endif
 #endif
 #ifndef CAN_ALTERNATES
-    #if defined(CAN_FAMILY_FDCAN)
+    #if defined(STM32G0B1xx)
+        #define CAN_ALTERNATES      GPIO_AF3_FDCAN1   // G0 FDCAN1 on PB8/PB9 = AF3
+    #elif defined(CAN_FAMILY_FDCAN)
         #define CAN_ALTERNATES      GPIO_AF9_FDCAN1   // G4 FDCAN1 on PB8/PB9 = AF9
     #elif defined(CAN_FAMILY_BXCAN)
         #define CAN_ALTERNATES      GPIO_AF4_CAN      // F0 bxCAN on PB8/PB9 = AF4

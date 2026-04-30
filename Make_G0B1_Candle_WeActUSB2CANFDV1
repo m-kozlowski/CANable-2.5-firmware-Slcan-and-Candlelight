@@ -1,0 +1,24 @@
+
+# CANable Candlelight Makefile (WeAct USB2CANFDV1 — STM32G0B1CBT6)
+
+######################################
+#
+# WeAct Studio USB2CANFDV1 board. See Make_G0B1_Slcan_WeActUSB2CANFDV1 for
+# the pinout details.
+#
+# Compile this by typing:
+#   make -s -f Make_G0B1_Candle_WeActUSB2CANFDV1
+#
+#######################################
+
+# TARGET_BOARD and TARGET_MCU: maximum 24 characters!
+
+TARGET_FIRMWARE = Candlelight
+TARGET_BOARD    = WeActUSB2CANFDV1
+TARGET_MCU      = STM32G0B1xx
+
+QUARTZ_FREQU    = 16000000
+
+TARGET_FILE = STM32G0B1_Candlelight2.5_WeActUSB2CANFDV1
+
+include GCC_Rules.mk

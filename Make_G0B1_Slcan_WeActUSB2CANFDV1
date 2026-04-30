@@ -1,0 +1,33 @@
+
+# CANable Slcan Makefile (WeAct USB2CANFDV1 — STM32G0B1CBT6)
+
+######################################
+#
+# WeAct Studio USB2CANFDV1 board (STM32G0B1CBT6, FDCAN1, 16 MHz HSE).
+# Pinout (from the manufacturer's wiki):
+#   PB8 = FDCAN1_RX, PB9 = FDCAN1_TX (alt. function 3)
+#   PA11 = USB DM, PA12 = USB DP (native USB-DRD)
+#   PA0 = LED_RXD, PA1 = LED_TXD, PA2 = LED_READY
+#   PF0/PF1 = 16 MHz crystal
+#
+# Compile this by typing:
+#   make -s -f Make_G0B1_Slcan_WeActUSB2CANFDV1
+#
+# Note: G0B1 has FDCAN, so CAN FD is supported. SYSCLK is 64 MHz (G0 max);
+# preset bitrate values in can.c are scaled accordingly.
+#
+#######################################
+
+# TARGET_BOARD and TARGET_MCU: maximum 24 characters!
+
+TARGET_FIRMWARE = Slcan
+TARGET_BOARD    = WeActUSB2CANFDV1
+TARGET_MCU      = STM32G0B1xx
+
+# 16 MHz HSE crystal feeds PLL: 16/2 * 16 / 2 = 64 MHz SYSCLK + PCLK1 + FDCAN
+QUARTZ_FREQU    = 16000000
+
+# name of the compiled files (*.bin, *.hex, *.elf)
+TARGET_FILE = STM32G0B1_Slcan2.5_WeActUSB2CANFDV1
+
+include GCC_Rules.mk

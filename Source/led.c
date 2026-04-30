@@ -60,6 +60,15 @@ void led_init()
         SetRxLed(C, true);
         SetTxLed(C, true);
     }
+
+#ifdef LED_READY_PIN
+    // Optional 3rd "READY" status LED (e.g. PA2 on the WeAct USB2CANFDV1).
+    // Driven directly by led_process_ready(); we just configure the GPIO here.
+    LED_READY_ENABLE();
+    GPIO_InitStruct.Pin = LED_READY_PIN;
+    HAL_GPIO_Init(LED_READY_PORT, &GPIO_InitStruct);
+    HAL_GPIO_WritePin(LED_READY_PORT, LED_READY_PIN, LED_ON); // mirror Rx/Tx during init
+#endif
 }
 
 // when the operating system goes into sleep mode --> turn off all LED's
@@ -70,6 +79,9 @@ void led_sleep()
         SetRxLed(C, false);
         SetTxLed(C, false);
     }
+#ifdef LED_READY_PIN
+    HAL_GPIO_WritePin(LED_READY_PORT, LED_READY_PIN, LED_OFF);
+#endif
 }
 
 // Blink LEDs of all channels alternatingly on power on.
@@ -215,6 +227,31 @@ void led_process(int channel, uint32_t tick_now)
     // Green LED on while bus is closed
     if (!can_is_open(channel))
         led_turn_TX(channel, true); // green on   
+
+#ifdef LED_READY_PIN
+    // Status LED behaviour (per the WeAct USB2CANFDV1 reference):
+    //   - CAN closed: LED off (idle / firmware not ready to bus traffic)
+    //   - CAN open  : 0.5 s toggle (visible "alive, on the bus" indicator)
+    // DFU mode is not handled here because dfu_switch_to_bootloader() jumps
+    // out of the firmware after a 300 ms delay; the bootloader drives its
+    // own LED behaviour from then on.
+    static uint32_t ready_last_toggle = 0;
+    static bool     ready_state       = false;
+    if (can_is_any_open())
+    {
+        if (tick_now - ready_last_toggle >= 500U)
+        {
+            ready_last_toggle = tick_now;
+            ready_state       = !ready_state;
+            HAL_GPIO_WritePin(LED_READY_PORT, LED_READY_PIN, ready_state ? LED_ON : LED_OFF);
+        }
+    }
+    else if (ready_state)
+    {
+        ready_state = false;
+        HAL_GPIO_WritePin(LED_READY_PORT, LED_READY_PIN, LED_OFF);
+    }
+#endif
 }
 
 // blue

@@ -70,11 +70,16 @@ endif
 # SYSTEM_C       CMSIS system file (provides SystemCoreClockUpdate); read
 #                directly from cmsis_device_X/Source/Templates.
 # CAN_C          which CAN driver source compiles in: the FDCAN driver
-#                (can.c, used by G4) or the bxCAN port (can_bxcan.c, F0).
+#                (can.c, used by G4 and G0) or the bxCAN port (can_bxcan.c, F0).
 ifneq (,$(findstring STM32G4,$(TARGET_MCU)))
     FAMILY_LC  = g4
     CPU        = cortex-m4
     SYSTEM_C   = system_stm32g4xx.c
+    CAN_C      = can.c
+else ifneq (,$(findstring STM32G0,$(TARGET_MCU)))
+    FAMILY_LC  = g0
+    CPU        = cortex-m0plus
+    SYSTEM_C   = system_stm32g0xx.c
     CAN_C      = can.c
 else ifneq (,$(findstring STM32F0,$(TARGET_MCU)))
     FAMILY_LC  = f0
