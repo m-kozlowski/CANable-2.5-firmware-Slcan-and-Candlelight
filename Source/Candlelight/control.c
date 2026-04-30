@@ -25,7 +25,7 @@ extern int            SET_TermPins[CHANNEL_COUNT];
 kCapabilityClassic    GS_CapabilityClassic;
 kCapabilityFD         GS_CapabilityFD;
 kDeviceVersion        GS_DeviceVersion = {0};
-// new ELmüSoft protocol
+// new ElmÃ¼Soft protocol
 kBoardInfo            ELM_BoardInfo    = {0};
 eFeedback             ELM_LastError    = FBK_Success;
 
@@ -57,10 +57,14 @@ void control_init()
                                    GS_DevFlagOneShot        |
                                    GS_DevFlagTimestamp      |
                                    GS_DevFlagIdentify       |
-                                   GS_DevFlagCAN_FD         |
-                                   GS_DevFlagBitTimingFD    |
                                    ELM_DevFlagProtocolElmue |
                                    ELM_DevFlagDisableTxEcho;
+#if !defined(CAN_FAMILY_BXCAN)
+    // CAN FD is only available on FDCAN-equipped MCUs (G4 family). The bxCAN
+    // port (F072) cannot advertise FD or it will get GS_ReqSetBitTimingFD
+    // requests it cannot satisfy.
+    GS_CapabilityClassic.feature |= GS_DevFlagCAN_FD | GS_DevFlagBitTimingFD;
+#endif
     if (SET_TermPins[0] > 0)
         GS_CapabilityClassic.feature |= GS_DevFlagTermination;
 
@@ -94,7 +98,7 @@ void control_init()
     GS_CapabilityFD.time_data.brp_inc  = 1;
     GS_CapabilityFD.time_data.sjw_max  = limits->fd_sjw_max;
 
-    // -------------- Added by ElmüSoft ----------------
+    // -------------- Added by ElmÃ¼Soft ----------------
 
     ELM_BoardInfo.McuDeviceID = (uint16_t)HAL_GetDEVID();
     strcpy(ELM_BoardInfo.McuName,   utils_get_MCU_name()); // "STM32G431"  (from makefile)
@@ -114,7 +118,7 @@ void control_init()
 // IMPORTANT: Read the comment for USBD_GS_Vendor_Request()
 bool control_setup_request(USBD_HandleTypeDef *pdev, USBD_SetupReqTypedef *req)
 {
-    // GetLastError always sends a valid response even if the ElmüSoft protocol is not enabled or the host sends an invalid channel.
+    // GetLastError always sends a valid response even if the ElmÃ¼Soft protocol is not enabled or the host sends an invalid channel.
     if (req->bRequest == ELM_ReqGetLastError)
     {
         uint8_t last_err = ELM_LastError;
@@ -122,7 +126,7 @@ bool control_setup_request(USBD_HandleTypeDef *pdev, USBD_SetupReqTypedef *req)
         return true;
     }
 
-    // To enable the new ElmüSoft commands the host must send as the first command:
+    // To enable the new ElmÃ¼Soft commands the host must send as the first command:
     // GS_ReqSetDeviceMode with GS_ModeReset and ELM_DevFlagProtocolElmue.
     if (req->bRequest >= ELM_ReqFIRST && !GLB_ProtoElmue)
     {
@@ -262,7 +266,7 @@ bool control_setup_request(USBD_HandleTypeDef *pdev, USBD_SetupReqTypedef *req)
                 break;
             case GS_ReqGetTimestamp:
                 // Bugfix: The legacy firmware used a timestamp created only when a USB SOF packet was received.
-                // This is totally stupid, because the timestamp has a precision of 1 µs, but SOF packets are received once every millisecond.
+                // This is totally stupid, because the timestamp has a precision of 1 Âµs, but SOF packets are received once every millisecond.
                 value32 = system_get_timestamp();
                 src = &value32;
                 len = sizeof(uint32_t);
@@ -332,7 +336,7 @@ bool control_setup_request(USBD_HandleTypeDef *pdev, USBD_SetupReqTypedef *req)
 // The HAL does not allow to stall endpoint 0 in this stage anymore.
 // If the host has sent invalid data for BitTiming or for a Filter we have no way to inform the host about this error.
 // Calling  USBD_CtlError() in this stage will not stall the endpoint. This is EXTREMLY stupid.
-// So the ONLY way to transmit errors of SETUP requests to the host is with the new ElmüSoft protocol and command ELM_ReqGetLastError.
+// So the ONLY way to transmit errors of SETUP requests to the host is with the new ElmÃ¼Soft protocol and command ELM_ReqGetLastError.
 // The host must call ELM_ReqGetLastError after each SETUP request to check for errors!
 // See subfolder SampleApplication, this is very easy.
 void control_setup_OUT_data(USBD_HandleTypeDef *pdev)
@@ -509,7 +513,7 @@ void control_process(int channel, uint32_t tick_now)
 
 void control_report_busload(int channel, uint8_t busload_percent)
 {
-    // only called for ElmüSoft protocol
+    // only called for ElmÃ¼Soft protocol
     buf_class* usb_buf = buf_get_instance(channel);
 
     kHostFrameObject* obj_to_host = buf_get_frame_locked(&usb_buf->list_host_pool);
@@ -530,14 +534,14 @@ void control_report_busload(int channel, uint8_t busload_percent)
 // should be GS_ReqSetDeviceMode with GS_ModeReset and ELM_DevFlagProtocolElmue.
 // This closes the device if still open and enables debug output.
 // If the device has a legacy firmware it will ignore any flags that are passed with GS_ModeReset.
-// Only the new ElmüSoft firmware allows to set flags when closing the device.
+// Only the new ElmÃ¼Soft firmware allows to set flags when closing the device.
 bool control_send_debug_mesg(int channel, const char* message)
 {
     // USR_DebugReport is only set if GLB_ProtoElmue == true
     if ((GLB_UserFlags[channel] & USR_DebugReport) == 0)
         return false;
 
-    // only called for ElmüSoft protocol
+    // only called for ElmÃ¼Soft protocol
     buf_class* usb_buf = buf_get_instance(channel);
 
     kHostFrameObject* obj_to_host = buf_get_frame_locked(&usb_buf->list_host_pool);

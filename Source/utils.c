@@ -15,23 +15,42 @@ void utils_init()
     // Stupidly the files from ST do not declare any constants for the CAN bitrate ranges.
     // They only give us the macros IS_FDCAN_NOMINAL_PRESCALER(), IS_FDCAN_NOMINAL_TSEG1(), ...
     // But the host application needs these limits to calculate the bitrates (commands 's' and 'y')
-    
+
     for (limits.nom_brp_max  = 2; IS_FDCAN_NOMINAL_PRESCALER(limits.nom_brp_max  +1); limits.nom_brp_max ++) { }
     for (limits.nom_seg1_max = 2; IS_FDCAN_NOMINAL_TSEG1    (limits.nom_seg1_max +1); limits.nom_seg1_max++) { }
     for (limits.nom_seg2_max = 2; IS_FDCAN_NOMINAL_TSEG2    (limits.nom_seg2_max +1); limits.nom_seg2_max++) { }
     for (limits.nom_sjw_max  = 2; IS_FDCAN_NOMINAL_SJW      (limits.nom_sjw_max  +1); limits.nom_sjw_max ++) { }
-    
+
+#if defined(CAN_FAMILY_BXCAN)
+    // bxCAN cannot do CAN FD; the IS_FDCAN_DATA_* macros are stubs that
+    // always return 0 in can_compat_bxcan.h. The probing loops above would
+    // start at 2 and then immediately succeed (because !0 + 1 == 1 wraps),
+    // so initialise the FD limits to zero here instead.
+    limits.fd_brp_max  = 0;
+    limits.fd_seg1_max = 0;
+    limits.fd_seg2_max = 0;
+    limits.fd_sjw_max  = 0;
+#else
     for (limits.fd_brp_max   = 2; IS_FDCAN_DATA_PRESCALER   (limits.fd_brp_max   +1); limits.fd_brp_max  ++) { }
     for (limits.fd_seg1_max  = 2; IS_FDCAN_DATA_TSEG1       (limits.fd_seg1_max  +1); limits.fd_seg1_max ++) { }
     for (limits.fd_seg2_max  = 2; IS_FDCAN_DATA_TSEG2       (limits.fd_seg2_max  +1); limits.fd_seg2_max ++) { }
     for (limits.fd_sjw_max   = 2; IS_FDCAN_DATA_SJW         (limits.fd_sjw_max   +1); limits.fd_sjw_max  ++) { }
-    
-    // remove trailing "x" in "STM32G431xx" from makefile
+#endif
+
+    // Strip the trailing variant suffix from the makefile-supplied name so the
+    // family/part shows cleanly to the host:
+    //   STM32G431xx -> STM32G431  (remove trailing 'x')
+    //   STM32F072xB -> STM32F072  (remove trailing 'xB' / 'xC' / etc.)
     strcpy(MCU_name, TARGET_MCU);
     int len = strlen(MCU_name);
-    while (MCU_name[--len] == 'x')
+    while (len > 0 && MCU_name[len - 1] != 'x')
     {
-        MCU_name[len] = 0;
+        MCU_name[--len] = 0; // drop suffix bytes after the last 'x'
+    }
+    // drop the 'x' itself, plus any further trailing 'x' chars
+    while (len > 0 && MCU_name[len - 1] == 'x')
+    {
+        MCU_name[--len] = 0;
     }
 }
 

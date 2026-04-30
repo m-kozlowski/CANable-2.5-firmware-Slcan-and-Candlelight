@@ -7,6 +7,7 @@
 #include "error.h"
 #include "utils.h"
 #include "control.h"
+#include "can.h"
 
 // ----- Globals
 extern eUserFlags  GLB_UserFlags[CHANNEL_COUNT];
@@ -49,11 +50,12 @@ bool error_is_report_due(int channel, uint32_t tick_now)
     
     // ----------------
     
-    // Refresh bus status and error counters
+    // Refresh bus status and error counters via the family-agnostic accessors.
+    // On G4 these wrap HAL_FDCAN_*; on F0 they read the bxCAN ESR/CAN_ERR registers.
     FDCAN_ProtocolStatusTypeDef status;
     FDCAN_ErrorCountersTypeDef  counters;
-    HAL_FDCAN_GetProtocolStatus(can_get_handle(channel), &status);
-    HAL_FDCAN_GetErrorCounters (can_get_handle(channel), &counters);
+    can_read_proto_status   (channel, &status);
+    can_read_error_counters (channel, &counters);
 
     // error passive or bus off --> turn green + blue LED on permanently
     if (status.Warning)      inst->cur_state.bus_status = BUS_StatusWarning; // MCU register FDCAN_PSR, flag EW (>  96 errors)

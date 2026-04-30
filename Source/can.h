@@ -70,9 +70,14 @@ typedef struct
 
     bool is_open;
     bool recover_bus_off;
-    bool termination_on; 
+    bool termination_on;
     bool bitrate_printed_once;
     bool delay_printed_once;
+
+    // FDCAN_MODE_* value passed to can_open(). Tracked separately because the
+    // bxCAN port stores a different (register-level) mode in handle.Init.Mode,
+    // so can_print_info() can't read it from the HAL handle.
+    uint32_t open_mode;
 
     uint32_t std_filter_count;    // standard filters
     uint32_t ext_filter_count;    // extended filters
@@ -123,4 +128,9 @@ void      can_recover_bus_off(int channel);
 
 FDCAN_HandleTypeDef *can_get_handle(int channel);
 
+// Read live bus status / error counters into the supplied structs. These wrap
+// HAL_FDCAN_GetProtocolStatus / HAL_FDCAN_GetErrorCounters on G4 and read the
+// equivalent bxCAN registers on F0. See error.c for the only caller.
+void      can_read_proto_status   (int channel, FDCAN_ProtocolStatusTypeDef* out);
+void      can_read_error_counters (int channel, FDCAN_ErrorCountersTypeDef*  out);
 

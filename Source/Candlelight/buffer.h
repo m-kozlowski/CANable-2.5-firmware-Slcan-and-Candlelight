@@ -14,11 +14,21 @@
 #include "candlelight_def.h"
 #include "usb_def.h"
 
-// If 3 Tx messages are in the Tx FIFO of the processor while 64 more Tx messages are in list_to_host, we have 67 messages waiting for an ACK.
-// If now another adapter is opened and acknowledges them all we are flooded with 67 Tx events to be sent to the host.
-// So the host buffer should be larger than the CAN buffer to avoid error APP_UsbInOverflow.
-#define CAN_QUEUE_SIZE      64
-#define HOST_QUEUE_SIZE     70
+// If 3 Tx messages are in the Tx FIFO of the processor while CAN_QUEUE_SIZE
+// more Tx messages are in list_to_host, we have 3+CAN_QUEUE_SIZE messages
+// waiting for an ACK. If another adapter is opened and acknowledges them
+// all we are flooded with that many Tx events to be sent to the host. So
+// the host buffer should be larger than the CAN buffer to avoid error
+// APP_UsbInOverflow. The G4 build can afford the originally-tuned 64/70
+// counts (each kHostFrameObject is ~88 bytes including list pointers); the
+// bxCAN/F072 build has 16 KB RAM and trades USB latency for fit.
+#if defined(CAN_FAMILY_BXCAN)
+    #define CAN_QUEUE_SIZE      16
+    #define HOST_QUEUE_SIZE     20
+#else
+    #define CAN_QUEUE_SIZE      64
+    #define HOST_QUEUE_SIZE     70
+#endif
 
 // ----------------------------------------------------------------------------------------
 
@@ -155,8 +165,8 @@ typedef struct
     // The result was an adapter not sending anymore and even crashes when the buffer got full!
     // Nobody ever noticed that because of a complete lack of proper error handling.
     // The legacy firmware did not even set an error flag when a buffer overflow occurred.
-    uint8_t    to_host_buf  [sizeof(kHostFrameLegacy)]; // stores USB IN  data during transmission (fixed by ElmüSoft)
-    uint8_t    from_host_buf[sizeof(kHostFrameLegacy)]; // stores USB OUT data after reception     (fixed by ElmüSoft)   
+    uint8_t    to_host_buf  [sizeof(kHostFrameLegacy)]; // stores USB IN  data during transmission (fixed by ElmÃ¼Soft)
+    uint8_t    from_host_buf[sizeof(kHostFrameLegacy)]; // stores USB OUT data after reception     (fixed by ElmÃ¼Soft)   
     
 }  __attribute__ ((aligned (4))) buf_class;
 

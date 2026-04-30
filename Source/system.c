@@ -17,37 +17,41 @@ uint32_t timestamp_wrap = 0;
 
 void system_init_timestamp();
 
+// FLASH_FLAG_ALL_ERRORS is provided by the G4 HAL directly. G0 and F0 HALs
+// omit it, so settings.h defines an equivalent OR of the per-family error
+// flags inside their respective MCU blocks.
+
 /*
 
 See "STM32G4 Series - Clock Generation.png" in subfolder "Documentation"
 
 Oscillators:
  +- HSI16 (16 MHz internal RC)
- +- HSE (4–48 MHz external quartz/resonator)
- +- MSI (100 kHz – 48 MHz multi-speed internal)
+ +- HSE (4-48 MHz external quartz/resonator)
+ +- MSI (100 kHz - 48 MHz multi-speed internal)
  +- HSI48 (48 MHz internal, for USB/RNG/CRS)
  +- LSE (32.768 kHz external quartz, RTC)
  +- LSI (~32 kHz internal RC, watchdog/RTC)
 
 PLL Block:
  +- Input: HSI16 / HSE / MSI
- +- PLLM (÷1..16)  --> divides input
- +- PLLN (×8..127) --> multiplies to VCO (64–344 MHz)
+ +- PLLM (Ã·1..16)  --> divides input
+ +- PLLN (Ã—8..127) --> multiplies to VCO (64-344 MHz)
  +- Outputs:
-     +- PLLR (÷2,4,6,8) --> SYSCLK
-     +- PLLQ (÷2,4,6,8) --> USB, SAI, RNG
-     +- PLLP (÷2,4,6,8,10,12,14,16, etc.) --> ADC, other peripherals
+     +- PLLR (Ã·2,4,6,8) --> SYSCLK
+     +- PLLQ (Ã·2,4,6,8) --> USB, SAI, RNG
+     +- PLLP (Ã·2,4,6,8,10,12,14,16, etc.) --> ADC, other peripherals
 
 System Clock (SYSCLK):
  +- Source mux: HSI16 / HSE / MSI / PLLR
  +- Max 170 MHz
 
 AHB Prescaler:
- +- HCLK = SYSCLK ÷ AHB prescaler
+ +- HCLK = SYSCLK Ã· AHB prescaler
 
 APB Prescalers:
- +- PCLK1 = HCLK ÷ APB1 prescaler (max 80 MHz)
- +- PCLK2 = HCLK ÷ APB2 prescaler (max 80 MHz)
+ +- PCLK1 = HCLK Ã· APB1 prescaler (max 80 MHz)
+ +- PCLK2 = HCLK Ã· APB2 prescaler (max 80 MHz)
 
 Peripheral Clock Domains:
  +- USB:
@@ -71,6 +75,7 @@ bool system_init(void)
     if (HAL_Init() != HAL_OK)
       return false;
 
+#if defined(STM32G431xx) || defined(STM32G473xx)
     // Configure the main internal regulator output voltage
     HAL_PWREx_ControlVoltageScaling(PWR_REGULATOR_VOLTAGE_SCALE1_BOOST);
 
@@ -119,7 +124,7 @@ bool system_init(void)
     // Bugfix: The legacy firmware used a PCLK1 and PCLK2 of 160 MHz which is outside the guaranteed operating conditions.
     // The maximum is 80 MHz otherwise these buses are heavily overclocked.
     // HCLK == SystemCoreClock is used for Cortex-M4, Memory, DMA, Flash, SRAM, SysTick timer, High-speed peripherals.
-    // PCLK1 is used for Lower -speed peripherals: I2C, USART2/3, LPUART, SPI2/3, CAN/FDCAN, DAC, TIM2–TIM7.
+    // PCLK1 is used for Lower -speed peripherals: I2C, USART2/3, LPUART, SPI2/3, CAN/FDCAN, DAC, TIM2-TIM7.
     // PCLK2 is used for Higher-speed peripherals: USART1, SPI1, TIM1, TIM8, ADCs.
     // See "STM32G4 Series - Clock Generation.png" in subfolder "Documentation"
     RCC_ClkInitTypeDef RCC_ClkInitStruct = {0};
@@ -165,6 +170,65 @@ bool system_init(void)
     system_init_timestamp();
     system_set_option_bytes(OPT_BOR_Level4);
     return true;
+
+#elif defined(STM32F072xB)
+    // Boot strategy: 8 MHz HSE -> /1 prediv -> x6 PLL -> 48 MHz SYSCLK.
+    // PLL output is also the USB clock source, so no HSI48/CRS plumbing is
+    // needed. APB1 (= HCLK on F0) feeds bxCAN at 48 MHz, giving integer
+    // prescalers for every standard CAN bitrate (10k..1M).
+    //
+    // 48 MHz needs 1 wait state on F0 flash (datasheet table "FLASH read
+    // access timing").
+
+#if HSE_VALUE != 8000000
+    #error "F072 build expects an 8 MHz HSE crystal (matches the schematic)."
+#endif
+
+    RCC_OscInitTypeDef RCC_OscInitStruct = {0};
+    RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSE;
+    RCC_OscInitStruct.HSEState       = RCC_HSE_ON;
+    RCC_OscInitStruct.HSIState       = RCC_HSI_ON; // keep HSI as fallback / SYSCLK source until PLL locks
+    RCC_OscInitStruct.HSI14State     = RCC_HSI14_OFF;
+    RCC_OscInitStruct.PLL.PLLState   = RCC_PLL_ON;
+    RCC_OscInitStruct.PLL.PLLSource  = RCC_PLLSOURCE_HSE;
+    RCC_OscInitStruct.PLL.PREDIV     = RCC_PREDIV_DIV1;
+    RCC_OscInitStruct.PLL.PLLMUL     = RCC_PLL_MUL6; // 8 MHz * 6 = 48 MHz
+    if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK)
+        return false;
+
+    RCC_ClkInitTypeDef RCC_ClkInitStruct = {0};
+    RCC_ClkInitStruct.ClockType      = RCC_CLOCKTYPE_SYSCLK | RCC_CLOCKTYPE_HCLK | RCC_CLOCKTYPE_PCLK1;
+    RCC_ClkInitStruct.SYSCLKSource   = RCC_SYSCLKSOURCE_PLLCLK;
+    RCC_ClkInitStruct.AHBCLKDivider  = RCC_SYSCLK_DIV1; // HCLK = 48 MHz
+    RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV1;   // PCLK1 = 48 MHz
+    if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_1) != HAL_OK)
+        return false;
+
+    // Route the USB peripheral clock from the PLL output (already 48 MHz).
+    // HSI48 is also available on F072 but the PLL gives a slightly tighter
+    // clock and avoids the CRS dance entirely.
+    RCC_PeriphCLKInitTypeDef RCC_PeriphClkInit = {0};
+    RCC_PeriphClkInit.PeriphClockSelection = RCC_PERIPHCLK_USB;
+    RCC_PeriphClkInit.UsbClockSelection    = RCC_USBCLKSOURCE_PLL;
+    if (HAL_RCCEx_PeriphCLKConfig(&RCC_PeriphClkInit) != HAL_OK)
+        return false;
+
+    HAL_NVIC_SetPriority(SysTick_IRQn, 0, 0);
+    __HAL_RCC_GPIOA_CLK_ENABLE();
+    __HAL_RCC_GPIOB_CLK_ENABLE();
+    __HAL_RCC_GPIOC_CLK_ENABLE();
+    __HAL_RCC_GPIOF_CLK_ENABLE(); // HSE crystal pins live on PF0/PF1
+
+    // PCLK1 == HCLK on F0. bxCAN is clocked from PCLK1.
+    canfd_clock = HAL_RCC_GetPCLK1Freq(); // 48 MHz
+
+    system_init_timestamp();
+    // F072 has no programmable BoR levels and the option-byte layout differs
+    // from G4. We skip the BOR write here; brown-out is fixed by hardware.
+    return true;
+#else
+    #error "system_init() has no clock-config block for this MCU. Add one above."
+#endif
 }
 
 // While TARGET_MCU (from the make file) defines for which MCU serie the code was COMPILED,
@@ -176,6 +240,13 @@ eMcuSerie system_get_mcu_serie()
     // HAL_GetDEVID() reads a 12 bit identifier (DBG_IDCODE) that is unique for each processor family.
     switch (HAL_GetDEVID())
     {
+        case 0x444: // STM32F03x
+        case 0x445: // STM32F04x
+        case 0x440: // STM32F05x
+        case 0x448: // STM32F07x
+        case 0x442: // STM32F09x
+            return SERIE_F0;
+
         case 0x460: // STM32G071 + G081
         case 0x465: // STM32G051 + G061
         case 0x466: // STM32G031 + G041
@@ -198,9 +269,10 @@ uint32_t system_get_can_clock()
     return canfd_clock;
 }
 
-// 1 µs timer
+// 1 us timer
 void system_init_timestamp()
 {
+#if defined(CAN_FAMILY_FDCAN)
     // Timer 3 uses PCLK1 (80 MHz)
     // But there is a special rule that this timer runs at 2 x PCLK1 if APB1CLKDivider > 1
     // This means that the timer clock is 160 MHz.
@@ -216,18 +288,42 @@ void system_init_timestamp()
     TIM3->PSC   = (SystemCoreClock / 1000000) - 1; // 160 - 1 = 159
     TIM3->ARR   = 0xFFFFFFFF;
     TIM3->CR1  |= TIM_CR1_CEN;
-    TIM3->EGR   = TIM_EGR_UG;   
-    
-    // This interrupt calls FDCAN1_IT0_IRQHandler()
-    HAL_NVIC_SetPriority(FDCAN1_IT0_IRQn, 0, 0);
-    HAL_NVIC_EnableIRQ  (FDCAN1_IT0_IRQn);   
+    TIM3->EGR   = TIM_EGR_UG;
+
+    // FDCAN IT0 wraparound IRQ. Vector symbol comes from settings.h
+    // (FDCAN1_IT0_IRQn on G4, TIM16_FDCAN_IT0_IRQn on G0 where it's shared
+    // with the TIM16 vector).
+    HAL_NVIC_SetPriority(MCU_FDCAN_NVIC_IRQn, 0, 0);
+    HAL_NVIC_EnableIRQ  (MCU_FDCAN_NVIC_IRQn);
+
+#elif defined(CAN_FAMILY_BXCAN)
+    // STM32F072 has no FDCAN timestamp counter, so we run TIM2 (32-bit
+    // general-purpose timer) as a free-running 1-us counter and read it in
+    // software. 32 bits at 1 MHz wraps every ~71 minutes, which is fine for
+    // CAN packet timestamps; no wraparound IRQ is needed.
+    __HAL_RCC_TIM2_CLK_ENABLE();
+    TIM2->CR1   = 0;
+    TIM2->CR2   = 0;
+    TIM2->SMCR  = 0;
+    TIM2->DIER  = 0;
+    TIM2->CCMR1 = 0;
+    TIM2->CCMR2 = 0;
+    TIM2->CCER  = 0;
+    TIM2->PSC   = (SystemCoreClock / 1000000U) - 1U; // 48 MHz / 48 = 1 MHz tick
+    TIM2->ARR   = 0xFFFFFFFFU;
+    TIM2->EGR   = TIM_EGR_UG;
+    TIM2->CR1  |= TIM_CR1_CEN;
+#endif
 }
 
-// overwrite weak interrupt handler dummy
-void FDCAN1_IT0_IRQHandler(void) 
-{ 
-    // this calls HAL_FDCAN_TimestampWraparoundCallback()
-    HAL_FDCAN_IRQHandler(can_get_handle(0)); 
+#if defined(CAN_FAMILY_FDCAN)
+// FDCAN timestamp-wraparound IRQ handler. The handler symbol is
+// MCU_FDCAN_IRQ_HANDLER (defined per-chip in settings.h):
+//   G4: FDCAN1_IT0_IRQHandler  (dedicated FDCAN1_IT0 vector)
+//   G0: TIM16_FDCAN_IT0_IRQHandler  (shared with TIM16 vector)
+void MCU_FDCAN_IRQ_HANDLER(void)
+{
+    HAL_FDCAN_IRQHandler(can_get_handle(0));
 }
 
 // overwrite weak callback dummy
@@ -236,19 +332,27 @@ void HAL_FDCAN_TimestampWraparoundCallback(FDCAN_HandleTypeDef *hfdcan)
 {
     timestamp_wrap ++;
 }
+#endif
 
 // ---------
 
-// get timestamp with 1 µs precision
-// Timer3 must be used because this is written into FDCAN_TxEventFifoTypeDef.TxTimestamp and FDCAN_RxHeaderTypeDef.RxTimestamp
-// Timer3 provides only the low 16 bit. The high 16 bit come from the wrap around callback.
+// get timestamp with 1 us precision
 uint32_t system_get_timestamp()
 {
-    // timer_3 has the same value as HAL_FDCAN_GetTimestampCounter()    
+#if defined(CAN_FAMILY_FDCAN)
+    // Timer3 has the same value as HAL_FDCAN_GetTimestampCounter().
+    // It only provides the low 16 bits; the high 16 bits come from the
+    // wrap-around interrupt that increments timestamp_wrap.
     return (timestamp_wrap << 16) | TIM3->CNT;
+#elif defined(CAN_FAMILY_BXCAN)
+    // TIM2 on F072 is a 32-bit timer, so the full timestamp comes from CNT
+    // alone. timestamp_wrap is unused (kept at 0 for upper layers that mix
+    // it back in for legacy 32-bit timestamp construction).
+    return TIM2->CNT;
+#endif
 }
 
-// get only the high 16 bit of the timestamp counter
+// get only the high 16 bit of the timestamp counter (always 0 on F0)
 uint32_t system_get_timewrap()
 {
     return timestamp_wrap;
@@ -259,7 +363,8 @@ uint32_t system_get_timewrap()
 // returns true if the requested option is set in the Option Bytes
 bool system_is_option_enabled(eOptionBytes e_Option)
 {
-    // Get option bytes
+#if defined(MCU_HAS_PROGRAMMABLE_BOR) || defined(MCU_HAS_PROGRAMMABLE_BOOT0)
+    // Chip exposes the relevant option-byte fields (currently only G4).
     FLASH_OBProgramInitTypeDef cur_values = {0};
     HAL_FLASHEx_OBGetConfig(&cur_values);
 
@@ -270,6 +375,19 @@ bool system_is_option_enabled(eOptionBytes e_Option)
         case OPT_BOOT0_Disable: return (cur_values.USERConfig & FLASH_OPTR_nSWBOOT0_Msk) == OB_BOOT0_FROM_OB;
     }
     return false;
+#else
+    // Chip doesn't expose programmable BoR / BOOT0 in the form the rest of
+    // the firmware expects (G0B1 has a different OPTR layout, F072 has no
+    // programmable BoR levels at all). Report fixed defaults consistent
+    // with factory state: BOOT0 pin enabled, BoR level not set.
+    switch (e_Option)
+    {
+        case OPT_BOR_Level4:    return false;
+        case OPT_BOOT0_Enable:  return true;
+        case OPT_BOOT0_Disable: return false;
+    }
+    return false;
+#endif
 }
 
 // Set BoR (Brown-Out Reset) level to 4 (2.8 Volt = highet value)
@@ -288,11 +406,18 @@ bool system_is_option_enabled(eOptionBytes e_Option)
 // ====================================================================================================
 eFeedback system_set_option_bytes(eOptionBytes e_Option)
 {
-    // IMPORTANT:
-    // The user may have uploaded the firmware to the wrong processor.
-    // The serie STM32G0XX has different bits in the OPTR register than the serie STM32G4XX.
-    // It is VERY important not to execute the following code on the wrong processor!
-    // Screwing up the Option Bytes may have fatal consquences that can make the board unusable.
+#if !defined(MCU_HAS_PROGRAMMABLE_BOOT0)
+    // Chip doesn't expose programmable BOOT0 (G0B1, F072). BOOT0 is enabled
+    // by factory default, so OPT_BOOT0_Enable is a no-op success (this lets
+    // dfu_switch_to_bootloader() proceed). Everything else is unsupported.
+    if (e_Option == OPT_BOOT0_Enable)
+        return FBK_Success;
+    return FBK_UnsupportedFeature;
+#else
+    // The chip MIGHT have the right OPTR layout â€” but as a runtime safety
+    // net, refuse to write option bytes if the firmware appears to be
+    // running on a different MCU family than it was built for. Screwing up
+    // option bytes on the wrong family can permanently brick the chip.
     if (system_get_mcu_serie() != SERIE_G4)
         return FBK_UnsupportedFeature;
 
@@ -337,7 +462,7 @@ eFeedback system_set_option_bytes(eOptionBytes e_Option)
 
     // IMPORTANT:
     // If previous errors are not cleared, HAL_FLASHEx_OBProgram() will fail.
-    // This was wrong in all legacy firmware versions. (fixed by ElmüSoft)
+    // This was wrong in all legacy firmware versions. (fixed by ElmÃ¼Soft)
     // The programmers did not even notice this bug because of a non-existent error handling (sloppy code).
     __HAL_FLASH_CLEAR_FLAG(FLASH_FLAG_ALL_ERRORS);
 
@@ -360,6 +485,7 @@ eFeedback system_set_option_bytes(eOptionBytes e_Option)
     // Even if the pin BOOT0 has been enabled, the pin will have no effect until a hardware reset is executed.
     // Therefore dfu_switch_to_bootloader() handles this special case.
     return FBK_Success;
+#endif // MCU_HAS_PROGRAMMABLE_BOOT0
 }
 
 // ----------------------------- R/W Flash Memory ----------------------------------
@@ -431,8 +557,14 @@ eFeedback system_write_flash(uint32_t segment, uint8_t* buffer, uint16_t data_le
 
     FLASH_EraseInitTypeDef erase_init;
     erase_init.TypeErase = FLASH_TYPEERASE_PAGES;
+#ifdef MCU_HAS_FLASH_BANK_FIELD
+    // G4 / G0 HAL: page index + bank.
     erase_init.Page      = (flash_addr - FLASH_BASE) / FLASH_PAGE_SIZE;
     erase_init.Banks     = FLASH_BANK_1;
+#else
+    // F0 HAL: absolute byte address, no Banks field.
+    erase_init.PageAddress = flash_addr;
+#endif
     erase_init.NbPages   = 1;
 
     // Erase entire 2 kB flash segment.

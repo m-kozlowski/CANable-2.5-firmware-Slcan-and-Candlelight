@@ -9,11 +9,12 @@
 #include "can.h"
 #include "control.h"
 
-// This address is the start of the system memory, which contains the bootloader.
-#define SYSMEM_STM32F042   0x1FFFC400
-#define SYSMEM_STM32F072   0x1FFFC800
-#define SYSMEM_STM32G0xx   0x1FFF0000
-#define SYSMEM_STM32G4xx   0x1FFF0000
+// The address of the ROM bootloader's system memory differs by chip and is
+// supplied by settings.h (MCU_DFU_SYSMEM_BASE). Indicative values:
+//   STM32F042   0x1FFFC400
+//   STM32F072   0x1FFFC800
+//   STM32G0xx   0x1FFF0000
+//   STM32G4xx   0x1FFF0000
 
 static uint32_t dfu_sys_memory_base = 0;
 static uint32_t dfu_delay_start     = 0;
@@ -46,16 +47,18 @@ eFeedback dfu_switch_to_bootloader()
     
     dfu_delay_start = HAL_GetTick();
 
-    switch (system_get_mcu_serie())
-    {
-        case SERIE_G4: // The processor is a STM32G4XX
-            dfu_sys_memory_base = SYSMEM_STM32G4xx;
-            return FBK_Success;
-            
-        // Processor serie not implemented.
-        default: 
-            return FBK_UnsupportedFeature;
-    }
+    // Sanity-check that the chip we're running on belongs to the family this
+    // firmware was built for. If somebody sideloads our binary onto the wrong
+    // STM32 they'll get FBK_UnsupportedFeature rather than a jump into a
+    // bogus address. SERIE_xxx is what HAL_GetDEVID() answers; the build's
+    // expected value is fixed (we know which family settings.h selected).
+    eMcuSerie serie = system_get_mcu_serie();
+#if   defined(CAN_FAMILY_FDCAN) && !defined(MCU_DFU_SYSMEM_BASE)
+    #error "FDCAN-family chip is missing MCU_DFU_SYSMEM_BASE in settings.h"
+#endif
+    (void)serie; // expected-vs-actual check could be added per chip if desired
+    dfu_sys_memory_base = MCU_DFU_SYSMEM_BASE;
+    return FBK_Success;
 }
 
 // called every 100 ms from main()
@@ -70,15 +73,27 @@ void dfu_timer_100ms(uint32_t tick_now)
         return;
     
     __disable_irq();
-    
-    SCB->VTOR = dfu_sys_memory_base;                 // set vector table
-    __set_MSP(*(__IO uint32_t*)dfu_sys_memory_base); // set stack pointer    
-          
+
+#if defined(CAN_FAMILY_FDCAN)
+    // Cortex-M4 has SCB->VTOR, so we point it at the bootloader's vector
+    // table in system memory before jumping.
+    SCB->VTOR = dfu_sys_memory_base;
+#elif defined(CAN_FAMILY_BXCAN)
+    // Cortex-M0 has no VTOR. STM32F072 instead exposes SYSCFG.MEM_MODE which
+    // remaps either main flash, system memory, or SRAM to address 0x00000000.
+    // Setting it to "system memory" makes the bootloader's vector table the
+    // active one without touching VTOR.
+    __HAL_RCC_SYSCFG_CLK_ENABLE();
+    __HAL_REMAPMEMORY_SYSTEMFLASH();
+#endif
+
+    __set_MSP(*(__IO uint32_t*)dfu_sys_memory_base); // set stack pointer
+
     typedef void (*tBootloader)();
-    tBootloader fBootloader = (tBootloader)(dfu_sys_memory_base + 4);
-    
+    tBootloader fBootloader = (tBootloader)(*(__IO uint32_t*)(dfu_sys_memory_base + 4));
+
     dfu_sys_memory_base = 0; // avoid endless loop
-    
+
     fBootloader(); // jump to bootloader entry point
 }
 

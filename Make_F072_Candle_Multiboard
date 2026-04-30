@@ -1,0 +1,31 @@
+
+# CANable Candlelight Makefile (STM32F072CBT6, classic CAN only - no FD)
+
+######################################
+#
+# This makefile compiles for the FYSETC CANable / STM32F072CBT6 board.
+# See Make_F072_Slcan_Multiboard for the pin map.
+#
+# Compile this by typing:
+# make -s -f Make_F072_Candle_Multiboard
+#
+# IMPORTANT: The STM32F072 has only the basic bxCAN peripheral, so CAN FD
+# is NOT supported by this firmware. The GS_DevFlagCAN_FD/BitTimingFD
+# capability bits are NOT advertised, and GS_ReqSetBitTimingFD returns
+# an error via ELM_ReqGetLastError.
+#
+#######################################
+
+# TARGET_BOARD and TARGET_MCU: maximum 24 characters!
+
+TARGET_FIRMWARE = Candlelight
+TARGET_BOARD    = F072_Multiboard
+TARGET_MCU      = STM32F072xB
+
+# 8 MHz HSE crystal (drives PLL x6 -> 48 MHz SYSCLK = USB clock)
+QUARTZ_FREQU    = 8000000
+
+# name of the compiled files (*.bin, *.hex, *.elf)
+TARGET_FILE = STM32F072_Candlelight2.5_Multiboard
+
+include GCC_Rules.mk

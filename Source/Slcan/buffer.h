@@ -15,13 +15,21 @@
 #define BUF_CDC_RX_NUM_BUFS    8
 #define BUF_CDC_RX_BUF_SIZE    CDC_DATA_FS_MAX_PACKET_SIZE // = 64 Size of RX buffer item
 
-// CDC transmit buffering (packets + debug messages)
-#define BUF_CDC_TX_NUM_BUFS    3
-#define BUF_CDC_TX_BUF_SIZE    4096 // Set to 64 * 64 for max single packet size
-
-// CAN transmit buffering
-#define BUF_CAN_TXQUEUE_LEN    64   // Number of buffers allocated
-#define CAN_MAX_DATALEN        64   // CAN maximum data length. Must be 64 for canfd.
+// CDC transmit buffering (packets + debug messages) and CAN Tx queue.
+// The G4 build sizes everything for CAN FD throughput; the bxCAN/F072 build
+// has 16 KB total RAM, so the buffers are shrunk to classic-CAN limits to
+// keep the .bss inside the available memory.
+#if defined(CAN_FAMILY_BXCAN)
+    #define BUF_CDC_TX_NUM_BUFS    3
+    #define BUF_CDC_TX_BUF_SIZE    1024
+    #define BUF_CAN_TXQUEUE_LEN    32
+    #define CAN_MAX_DATALEN        8    // bxCAN is classic CAN only (max 8 data bytes)
+#else
+    #define BUF_CDC_TX_NUM_BUFS    3
+    #define BUF_CDC_TX_BUF_SIZE    4096
+    #define BUF_CAN_TXQUEUE_LEN    64
+    #define CAN_MAX_DATALEN        64   // CAN FD maximum data length
+#endif
 
 // Receive buffering: circular buffer FIFO
 // buf_cdc_rx is written in the interrupt handler CDC_Receive_FS() where ASCII characters are received

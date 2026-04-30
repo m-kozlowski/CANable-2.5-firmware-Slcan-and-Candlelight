@@ -55,17 +55,37 @@ void PendSV_Handler(void)
 {
 }
 
-// Handle USB interrupts
-void USB_LP_IRQHandler(void)
+// USB IRQ handler. Symbol name comes from settings.h (MCU_USB_IRQ_HANDLER):
+// it's USB_LP_IRQHandler on G4 (split LP/HP vectors), USB_IRQHandler on F0
+// (single combined vector), or USB_UCPD1_2_IRQHandler on G0 (combined with
+// the type-C UCPD controller, which is unused here so the whole vector is
+// forwarded to PCD).
+void MCU_USB_IRQ_HANDLER(void)
 {
   HAL_PCD_IRQHandler(&hpcd_USB_FS);
 }
 
-// Handle USB interrupts
-void USB_HP_IRQHandler(void)
+#ifdef MCU_USB_HP_IRQ_HANDLER
+// G4 has a separate high-priority USB vector for isochronous + double-buffer
+// endpoints. We don't use either, but the vector is wired by HAL_PCD's MSP
+// init, so handle it identically.
+void MCU_USB_HP_IRQ_HANDLER(void)
 {
   HAL_PCD_IRQHandler(&hpcd_USB_FS);
 }
+#endif
+
+#ifdef MCU_BXCAN_IRQ_HANDLER
+// bxCAN families route every CAN interrupt (Tx mailbox empty, Rx FIFO0/1,
+// status change, error) to a single combined vector that's also shared
+// with another peripheral on the chip (CEC on F072). The CAN handle is
+// owned by can_bxcan.c; we forward via the helper it exports.
+void MCU_BXCAN_IRQ_HANDLER(void)
+{
+    extern void can_irq_handler(void);
+    can_irq_handler();
+}
+#endif
 
 // Handle SysTick interrupt
 void SysTick_Handler(void)

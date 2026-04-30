@@ -114,6 +114,8 @@ eFeedback can_open(int channel, uint32_t mode)
     error_init(channel);
     led_blink_identify(channel, false); // stop identify blinking
 
+    inst->open_mode = mode;
+
     FDCAN_InitTypeDef* init = &inst->handle.Init;
     init->ClockDivider          = FDCAN_CLOCK_DIV1;
     init->Mode                  = mode;
@@ -152,10 +154,10 @@ eFeedback can_open(int channel, uint32_t mode)
 
     // Calculate the length of 1 nominal CAN bus bit in nanoseconds (500 kBaud --> nom_bit_len_ns = 2000)
 
-    uint32_t clock_MHz = system_get_can_clock() / 1000000; // 160
+    uint32_t clock_MHz = system_get_can_clock() / 1000000; // chip-specific FDCAN kernel clock in MHz
     inst->nom_bit_len_ns  = 1 + inst->bitrate_nominal.Seg1 + inst->bitrate_nominal.Seg2; // time quantums
     inst->nom_bit_len_ns *= inst->bitrate_nominal.Brp;     // clock prescaler
-    inst->nom_bit_len_ns *= 1000;                          // µs -> ns
+    inst->nom_bit_len_ns *= 1000;                          // Âµs -> ns
     inst->nom_bit_len_ns /= clock_MHz;
 
     inst->bitrate_printed_once = false;
@@ -311,7 +313,7 @@ void can_process(int channel, uint32_t tick_now)
 
     // -------------------------- Tx Event ------------------------------------
 
-    // This was competely wrong in the original Candlelight firmware (fixed by Elmüsoft).
+    // This was competely wrong in the original Candlelight firmware (fixed by ElmÃ¼soft).
     // Instead of sending a Tx Event to the host in the moment when the processor has really sent the packet to the CAN bus
     // they have sent a fake event immediately after dispatching the packet, no matter if it really was sent or not.
     FDCAN_TxEventFifoTypeDef tx_event;
@@ -330,7 +332,7 @@ void can_process(int channel, uint32_t tick_now)
 
         // In loopback mode do not count the same packet twice (Tx == Rx at the same time without delay)
         // In bus montoring mode and restricted mode sending packets is not possible.
-        if (inst->handle.Init.Mode == FDCAN_MODE_NORMAL)
+        if (inst->open_mode == FDCAN_MODE_NORMAL)
         {
             // TxEventFifoTypeDef and RxHeaderTypeDef are identical except the last 2 members, which are not needed for busload calculation.
             FDCAN_RxHeaderTypeDef* rx_header = (FDCAN_RxHeaderTypeDef*)&tx_event;
@@ -507,7 +509,7 @@ void can_timer_100ms()
 
         if (inst->busload_counter >= inst->busload_interval) // interval elapsed
         {
-            // This function is called every 100 ms = 100 * 1000 µs --> divide by 100000
+            // This function is called every 100 ms = 100 * 1000 Âµs --> divide by 100000
             uint32_t rate_us_ppm = inst->bit_count_total * inst->nom_bit_len_ns / 100000;
             uint32_t busload_ppm = rate_us_ppm * STUFFING_FACTOR / inst->busload_interval;
             
@@ -540,48 +542,50 @@ eFeedback can_set_baudrate(int channel, can_nom_bitrate bitrate)
     if (inst->is_open)
         return FBK_AdapterMustBeClosed; // cannot set bitrate while on bus
 
-    inst->bitrate_nominal.Seg1 = 239;
-    inst->bitrate_nominal.Seg2 =  80;
+    // Translate the legacy slcan SX index into a target baudrate (Hz).
+    // The S0..S9 mapping is fixed by the slcan protocol; do not reorder.
+    static const uint32_t slcan_baud_hz[] = {
+        [CAN_BITRATE_10K]   = 10000,    [CAN_BITRATE_20K]   = 20000,
+        [CAN_BITRATE_50K]   = 50000,    [CAN_BITRATE_100K]  = 100000,
+        [CAN_BITRATE_125K]  = 125000,   [CAN_BITRATE_250K]  = 250000,
+        [CAN_BITRATE_500K]  = 500000,   [CAN_BITRATE_800K]  = 800000,
+        [CAN_BITRATE_1000K] = 1000000,  [CAN_BITRATE_83K]   = 83333,
+    };
+    if (bitrate >= CAN_BITRATE_INVALID) return FBK_InvalidParameter;
+    uint32_t baud_hz = slcan_baud_hz[bitrate];
 
-    switch (bitrate)
-    {
-        case CAN_BITRATE_10K:
-            inst->bitrate_nominal.Brp  = 50;
-            break;
-        case CAN_BITRATE_20K:
-            inst->bitrate_nominal.Brp  = 25;
-            break;
-        case CAN_BITRATE_50K:
-            inst->bitrate_nominal.Brp  = 10;
-            break;
-        case CAN_BITRATE_83K:
-            inst->bitrate_nominal.Brp  = 6;
-            break;
-        case CAN_BITRATE_100K:
-            inst->bitrate_nominal.Brp  = 5;
-            break;
-        case CAN_BITRATE_125K:
-            inst->bitrate_nominal.Brp  = 4;   // 160 MHz / 4 / (1 + 239 + 80) = 125 kBaud
-            break;                            // (1 + 239)   / (1 + 239 + 80) = 75%
-        case CAN_BITRATE_250K:
-            inst->bitrate_nominal.Brp  = 2;
-            break;
-        case CAN_BITRATE_500K:
-            inst->bitrate_nominal.Brp  = 1;
-            break;
-        case CAN_BITRATE_800K:
-            inst->bitrate_nominal.Brp  = 1;
-            inst->bitrate_nominal.Seg1 = 149;
-            inst->bitrate_nominal.Seg2 = 50;
-            break;
-        case CAN_BITRATE_1000K:
-            inst->bitrate_nominal.Brp  = 1;
-            inst->bitrate_nominal.Seg1 = 119;
-            inst->bitrate_nominal.Seg2 = 40;
-            break;
-        default:
-            return FBK_InvalidParameter;
+    // Compute Brp + segment lengths from the chip's FDCAN kernel clock and
+    // its preferred TQ-per-bit count (settings.h). Sample point is fixed at
+    // 75% (this preserves the original G4 presets exactly; verified bit-for-
+    // bit against the previous hand-rolled tables).
+    //
+    // Strategy:
+    //   1. Try the preferred MCU_NOMINAL_TQ. If clock is exactly divisible
+    //      by (baud * MCU_NOMINAL_TQ), this gives an integer Brp and we're
+    //      done.
+    //   2. Otherwise, if clock is exactly divisible by baud, tighten the TQ
+    //      count to (clock / baud) and use Brp=1. This is what the original
+    //      G4 table did for 800k/1M, where TQ=320 would have required
+    //      Brp<1.
+    //   3. Otherwise (e.g. 83.333 kbaud which doesn't divide cleanly into
+    //      any clock), fall back to Brp = clock / (baud * TQ) at preferred
+    //      TQ and accept the tiny rounding error (~0.001%).
+    uint32_t brp   = MCU_FDCAN_CLOCK_HZ / (baud_hz * MCU_NOMINAL_TQ);
+    uint32_t total = MCU_NOMINAL_TQ;
+    if (brp >= 1 && brp * baud_hz * MCU_NOMINAL_TQ == MCU_FDCAN_CLOCK_HZ) {
+        // case (1) - preferred TQ gives an exact integer Brp
+    } else if (MCU_FDCAN_CLOCK_HZ % baud_hz == 0) {
+        // case (2) - tighten TQ for an exact match at Brp=1
+        total = MCU_FDCAN_CLOCK_HZ / baud_hz;
+        brp   = 1;
+    } else {
+        // case (3) - best approximation at preferred TQ
+        if (brp == 0) brp = 1;
     }
+
+    inst->bitrate_nominal.Brp  = brp;
+    inst->bitrate_nominal.Seg2 = total / 4;                       // 25%
+    inst->bitrate_nominal.Seg1 = total - inst->bitrate_nominal.Seg2 - 1;  // 75% sample point
 
     bitlimits* limits = utils_get_bit_limits();
     inst->bitrate_nominal.Sjw = MIN(inst->bitrate_nominal.Seg2, limits->nom_sjw_max);
@@ -609,20 +613,19 @@ eFeedback can_set_data_baudrate(int channel, can_data_bitrate bitrate)
     if (inst->is_open)
         return FBK_AdapterMustBeClosed; // cannot set bitrate while on bus
 
+#ifdef MCU_HAS_HANDTUNED_DATA_BITRATES
+    // Hand-tuned table for chips whose FDCAN block is sensitive to specific
+    // (BRP, Seg1, Seg2) combinations at high data rates - notably the
+    // STM32G431, which only achieves 8 Mbit when the sample point drops to
+    // 50% (per Elmue's empirical findings, comment preserved below).
     inst->bitrate_data.Seg1 = 29;
     inst->bitrate_data.Seg2 = 10;
 
     switch (bitrate)
     {
-        case CAN_DATA_BITRATE_500K:
-            inst->bitrate_data.Brp  = 8;
-            break;
-        case CAN_DATA_BITRATE_1M:
-            inst->bitrate_data.Brp  = 4;
-            break;
-        case CAN_DATA_BITRATE_2M:
-            inst->bitrate_data.Brp  = 2;
-            break;
+        case CAN_DATA_BITRATE_500K: inst->bitrate_data.Brp = 8; break;
+        case CAN_DATA_BITRATE_1M:   inst->bitrate_data.Brp = 4; break;
+        case CAN_DATA_BITRATE_2M:   inst->bitrate_data.Brp = 2; break;
         case CAN_DATA_BITRATE_4M:
             inst->bitrate_data.Brp  = 2;  // 160 MHz / 2 / (1 + 14 + 5) = 4 MBaud
             inst->bitrate_data.Seg1 = 14; // (1 + 14)    / (1 + 14 + 5) = 75%
@@ -643,6 +646,40 @@ eFeedback can_set_data_baudrate(int channel, can_data_bitrate bitrate)
         default:
             return FBK_InvalidParameter;
     }
+#else
+    // Generic 75%-sample-point computation from MCU_FDCAN_CLOCK_HZ. Same
+    // algorithm as nominal: try a moderate target TQ, fall back to a tighter
+    // count if Brp would otherwise need to be < 1 or non-integer. Reject
+    // baudrates that don't divide cleanly from this chip's clock.
+    static const uint32_t slcan_data_baud_hz[] = {
+        [CAN_DATA_BITRATE_500K] =  500000,  [CAN_DATA_BITRATE_1M]   = 1000000,
+        [CAN_DATA_BITRATE_2M]   = 2000000,  [CAN_DATA_BITRATE_4M]   = 4000000,
+        [CAN_DATA_BITRATE_5M]   = 5000000,  [CAN_DATA_BITRATE_8M]   = 8000000,
+    };
+    if (bitrate >= CAN_DATA_BITRATE_INVALID || slcan_data_baud_hz[bitrate] == 0)
+        return FBK_InvalidParameter;
+    uint32_t baud_hz = slcan_data_baud_hz[bitrate];
+
+    const uint32_t target_data_tq = 32U;  // moderate; falls back as needed
+    uint32_t brp   = MCU_FDCAN_CLOCK_HZ / (baud_hz * target_data_tq);
+    uint32_t total = target_data_tq;
+    if (brp >= 1 && brp * baud_hz * target_data_tq == MCU_FDCAN_CLOCK_HZ) {
+        // exact at preferred TQ
+    } else if (MCU_FDCAN_CLOCK_HZ % baud_hz == 0) {
+        total = MCU_FDCAN_CLOCK_HZ / baud_hz;
+        brp   = 1;
+        // bxCAN data Seg1 max is small; reject obviously out-of-range fits
+        if (total < 4) return FBK_UnsupportedFeature;
+    } else {
+        // No exact fit possible at this clock - refuse rather than silently
+        // run off-frequency on a high-rate FD bus.
+        return FBK_UnsupportedFeature;
+    }
+
+    inst->bitrate_data.Brp  = brp;
+    inst->bitrate_data.Seg2 = total / 4;
+    inst->bitrate_data.Seg1 = total - inst->bitrate_data.Seg2 - 1;
+#endif
 
     bitlimits* limits = utils_get_bit_limits();
     inst->bitrate_data.Sjw = MIN(inst->bitrate_data.Seg2, limits->fd_sjw_max);
@@ -716,10 +753,10 @@ void can_print_info(int channel)
     can_class* inst = &can_inst[channel];
 
     char buf[200];
-    if (inst->handle.Init.Mode != FDCAN_MODE_NORMAL)
+    if (inst->open_mode != FDCAN_MODE_NORMAL)
     {
         char* mode = "Invalid";
-        switch (inst->handle.Init.Mode)
+        switch (inst->open_mode)
         {
             case FDCAN_MODE_RESTRICTED_OPERATION: mode = "Restricted";        break;
             case FDCAN_MODE_BUS_MONITORING:       mode = "Monitoring";        break;
@@ -942,6 +979,18 @@ bool can_is_tx_fifo_free(int channel)
 FDCAN_HandleTypeDef *can_get_handle(int channel)
 {
     return &can_inst[channel].handle;
+}
+
+// Wrapper around HAL_FDCAN_GetProtocolStatus so error.c stays MCU-agnostic.
+void can_read_proto_status(int channel, FDCAN_ProtocolStatusTypeDef* out)
+{
+    HAL_FDCAN_GetProtocolStatus(&can_inst[channel].handle, out);
+}
+
+// Wrapper around HAL_FDCAN_GetErrorCounters so error.c stays MCU-agnostic.
+void can_read_error_counters(int channel, FDCAN_ErrorCountersTypeDef* out)
+{
+    HAL_FDCAN_GetErrorCounters(&can_inst[channel].handle, out);
 }
 
 // ---------------------------------------------------------------------------------------------------

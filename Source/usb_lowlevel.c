@@ -30,22 +30,30 @@ USBD_StatusTypeDef ConvStatus(HAL_StatusTypeDef hal_status);
                        LL Driver Callbacks (PCD -> USB Device Library)
 *******************************************************************************/
 
+// USB instance + IRQ vector + clock-enable macros all come from settings.h
+// (USB_INSTANCE, MCU_USB_NVIC_IRQn). Across the supported families:
+//   G4:  USB         + USB_LP_IRQn  (USB_HP_IRQn handled in interrupts.c)
+//   F0:  USB         + USB_IRQn  (single combined vector)
+//   G0:  USB_DRD_FS  + USB_UCPD1_2_IRQn  (shared with UCPD type-C controller)
+// All three families happen to expose the same RCC enable/disable macro
+// names for their USB block, so no per-MCU alias is needed for those.
+
 void HAL_PCD_MspInit(PCD_HandleTypeDef* pcdHandle)
 {
-  if(pcdHandle->Instance==USB)
+  if(pcdHandle->Instance == USB_INSTANCE)
   {
     __HAL_RCC_USB_CLK_ENABLE();
-    HAL_NVIC_SetPriority(USB_LP_IRQn, 2, 0);
-    HAL_NVIC_EnableIRQ(USB_LP_IRQn);
+    HAL_NVIC_SetPriority(MCU_USB_NVIC_IRQn, 2, 0);
+    HAL_NVIC_EnableIRQ(MCU_USB_NVIC_IRQn);
   }
 }
 
 void HAL_PCD_MspDeInit(PCD_HandleTypeDef* pcdHandle)
 {
-  if(pcdHandle->Instance==USB)
+  if(pcdHandle->Instance == USB_INSTANCE)
   {
     __HAL_RCC_USB_CLK_DISABLE();
-    HAL_NVIC_DisableIRQ(USB_LP_IRQn);
+    HAL_NVIC_DisableIRQ(MCU_USB_NVIC_IRQn);
   }
 }
 
@@ -143,7 +151,7 @@ USBD_StatusTypeDef USBD_LL_Init(USBD_HandleTypeDef *pdev)
   /* Link the driver to the stack. */
   pdev->pData = &hpcd_USB_FS;
 
-  hpcd_USB_FS.Instance = USB;
+  hpcd_USB_FS.Instance = USB_INSTANCE;
   hpcd_USB_FS.Init.dev_endpoints = 8;
   hpcd_USB_FS.Init.speed = PCD_SPEED_FULL;
   hpcd_USB_FS.Init.ep0_mps = PCD_EP0MPS_64;

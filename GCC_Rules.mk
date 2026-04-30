@@ -59,8 +59,31 @@ endif
 # build configuration
 #######################################
 
-# ARM CPU type
-CPU = cortex-m4
+# Detect the MCU family from TARGET_MCU and select toolchain options.
+# Add new families here as they are ported.
+#
+# FAMILY_LC      lowercase family code, used to find the per-family HAL
+#                driver and CMSIS-Device repos as git submodules under
+#                STM32/stm32{family_lc}xx_hal_driver and
+#                STM32/cmsis_device_{family_lc}.
+# CPU            -mcpu= value passed to arm-none-eabi-gcc.
+# SYSTEM_C       CMSIS system file (provides SystemCoreClockUpdate); read
+#                directly from cmsis_device_X/Source/Templates.
+# CAN_C          which CAN driver source compiles in: the FDCAN driver
+#                (can.c, used by G4) or the bxCAN port (can_bxcan.c, F0).
+ifneq (,$(findstring STM32G4,$(TARGET_MCU)))
+    FAMILY_LC  = g4
+    CPU        = cortex-m4
+    SYSTEM_C   = system_stm32g4xx.c
+    CAN_C      = can.c
+else ifneq (,$(findstring STM32F0,$(TARGET_MCU)))
+    FAMILY_LC  = f0
+    CPU        = cortex-m0
+    SYSTEM_C   = system_stm32f0xx.c
+    CAN_C      = can_bxcan.c
+else
+    $(error TARGET_MCU '$(TARGET_MCU)' is not recognized. Add a family branch in GCC_Rules.mk.)
+endif
 
 # where to build STM32Cube
 CUBELIB_BUILD_DIR = $(BUILD_DIR)/STM32Cube
@@ -68,8 +91,8 @@ CUBELIB_BUILD_DIR = $(BUILD_DIR)/STM32Cube
 # Paths into the upstream ST submodules
 # After cloning this repo, run:
 #     git submodule update --init --recursive
-DRIVER_PATH    = STM32/stm32g4xx_hal_driver
-CMSIS_DEV_PATH = STM32/cmsis_device_g4
+DRIVER_PATH    = STM32/stm32$(FAMILY_LC)xx_hal_driver
+CMSIS_DEV_PATH = STM32/cmsis_device_$(FAMILY_LC)
 
 # Friendly error if the user forgot to init submodules.
 ifeq ($(wildcard $(DRIVER_PATH)/Inc/.),)
@@ -153,8 +176,8 @@ $(FIRM_BUILD_DIR):
 # build the user application
 #######################################
 
-# list of common source files
-SOURCES = main.c system_stm32g4xx.c system.c interrupts.c can.c error.c led.c dfu.c utils.c usb_ctrlreq.c usb_ioreq.c usb_core.c usb_lowlevel.c 
+# list of common source files (CMSIS system file + CAN driver vary by family)
+SOURCES = main.c $(SYSTEM_C) system.c interrupts.c $(CAN_C) error.c led.c dfu.c utils.c usb_ctrlreq.c usb_ioreq.c usb_core.c usb_lowlevel.c
 
 # list of user program objects
 OBJECTS = $(addprefix $(BUILD_DIR)/,$(notdir $(SOURCES:.c=.o)))
@@ -180,16 +203,16 @@ $(BUILD_TRUNK).elf: $(OBJECTS) $(FIRM_OBJECTS) $(CUBELIB)
 $(BUILD_DIR)/%.o: Source/%.c | $(BUILD_DIR)
 	$(CC) $(CFLAGS) -c -o $@ $^
 
-# CMSIS template files come from the cmsis_device_g4 submodule
+# CMSIS template files come from the cmsis_device_X submodule
 # Filenames inside the submodule are lowercase while TARGET_MCU is mixed case
 TARGET_MCU_LC := $(shell echo $(TARGET_MCU) | tr A-Z a-z)
 STARTUP_S      = $(CMSIS_DEV_PATH)/Source/Templates/gcc/startup_$(TARGET_MCU_LC).s
-SYSTEM_C_PATH  = $(CMSIS_DEV_PATH)/Source/Templates/system_stm32g4xx.c
+SYSTEM_C_PATH  = $(CMSIS_DEV_PATH)/Source/Templates/$(SYSTEM_C)
 
 $(BUILD_DIR)/startup_$(TARGET_MCU).o: $(STARTUP_S) | $(BUILD_DIR)
 	$(CC) $(CFLAGS) -c -o $@ $<
 
-$(BUILD_DIR)/system_stm32g4xx.o: $(SYSTEM_C_PATH) | $(BUILD_DIR)
+$(BUILD_DIR)/$(SYSTEM_C:.c=.o): $(SYSTEM_C_PATH) | $(BUILD_DIR)
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 $(BUILD_DIR):

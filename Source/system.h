@@ -22,9 +22,10 @@ typedef enum
     OPT_BOOT0_Disable = 3, // Always boot into flash memory
 } eOptionBytes;
 
-typedef enum 
+typedef enum
 {
     SERIE_Unknown,
+    SERIE_F0,      // STM32F0XX
     SERIE_G0,      // STM32G0XX
     SERIE_G4,      // STM32G4XX
 } eMcuSerie;

@@ -1,0 +1,32 @@
+
+# CANable Slcan Makefile (STM32F072CBT6, classic CAN only - no FD)
+
+######################################
+#
+# This makefile compiles for the FYSETC CANable / STM32F072CBT6 board.
+# Pin map (from schematic): CAN_RX=PB8 (AF4), CAN_TX=PB9 (AF4),
+# USB D-/D+ = PA11/PA12, LED1=PA0, LED2=PA1,
+# SN65HVD230 RS (slope/standby) = PC13, 8 MHz HSE crystal on PF0/PF1.
+#
+# Compile this by typing:
+# make -s -f Make_F072_Slcan_Multiboard
+#
+# IMPORTANT: The STM32F072 has only the basic bxCAN peripheral, so CAN FD
+# is NOT supported by this firmware. Slcan FD commands (Y/y, b/B, d/D)
+# return an error.
+#
+#######################################
+
+# TARGET_BOARD and TARGET_MCU: maximum 24 characters!
+
+TARGET_FIRMWARE = Slcan
+TARGET_BOARD    = F072_Multiboard
+TARGET_MCU      = STM32F072xB
+
+# 8 MHz HSE crystal (drives PLL x6 -> 48 MHz SYSCLK = USB clock)
+QUARTZ_FREQU    = 8000000
+
+# name of the compiled files (*.bin, *.hex, *.elf)
+TARGET_FILE = STM32F072_Slcan2.5_Multiboard
+
+include GCC_Rules.mk
