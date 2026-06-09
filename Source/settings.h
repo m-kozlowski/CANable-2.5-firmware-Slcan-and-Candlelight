@@ -213,12 +213,18 @@ typedef enum // sent as 8 bit
 
 #if defined(Multiboard)
     // MKS Makerbase + Walfront + DSD Tech + Jhoinrch before 2026 use default settings
+    #define MAX_CAN_BAUDRATE    10 // CAN transceiver chip limits to 10 Mbaud
+    #define ALLOW_DISABLE_BOOT0 1  // allow to disable pin BOOT0
 #elif defined(Jhoinrch)
     // Jhoinrch puts a 25 MHz quartz on all their boards since 2026 (make file defines: QUARTZ_FREQU = 25000000).
+    #define MAX_CAN_BAUDRATE    10 // CAN transceiver chip limits to 10 Mbaud
+    #define ALLOW_DISABLE_BOOT0 1  // allow to disable pin BOOT0
 #elif defined(OpenlightLabs)
     // OpenlightLabs has the green LED at pin B11
     #define LED_TX_PINS         GPIO_PIN_11
     #define LED_TX_PORTS        GPIOB
+    #define MAX_CAN_BAUDRATE    5  // CAN transceiver chip limits to 5 Mbaud
+    #define ALLOW_DISABLE_BOOT0 1  // allow to disable pin BOOT0
 #elif defined(OleksiiSolo)
     // Oleksii puts a 8 MHz quartz on the single channel board (make file defines: QUARTZ_FREQU = 8000000).
     #define LED_TX_PINS         GPIO_PIN_5
@@ -229,6 +235,8 @@ typedef enum // sent as 8 bit
     #define LED_MODE            GPIO_MODE_OUTPUT_PP
     #define LED_ON              GPIO_PIN_SET             // The LED's cathode is connected to ground
     #define LED_OFF             GPIO_PIN_RESET
+    #define MAX_CAN_BAUDRATE    8  // CAN transceiver chip limits to 8 Mbaud
+    #define ALLOW_DISABLE_BOOT0 1  // allow to disable pin BOOT0
 #elif defined(OleksiiDual)
     // Oleksii puts a 8 MHz quartz on the dual channel board (make file defines: QUARTZ_FREQU = 8000000).
     // The board has 2 CAN connectors and creates 2 Candlelight USB interfaces.
@@ -252,6 +260,8 @@ typedef enum // sent as 8 bit
     #define LED_MODE            GPIO_MODE_OUTPUT_PP
     #define LED_ON              GPIO_PIN_SET             // The LED's cathode is connected to ground
     #define LED_OFF             GPIO_PIN_RESET
+    #define MAX_CAN_BAUDRATE    8  // CAN transceiver chip limits to 8 Mbaud
+    #define ALLOW_DISABLE_BOOT0 1  // allow to disable pin BOOT0 (indispensable for correct operation)
 #elif defined(WeActUSB2CANFDV1)
     // WeAct Studio USB2CANFDV1 board (STM32G0B1CBT6, FDCAN1, 16 MHz HSE).
     // Pinout (from manufacturer's documentation):
@@ -285,6 +295,8 @@ typedef enum // sent as 8 bit
     // -------------------
     #define TERMINATOR_PINS     -1                            // no GPIO-controlled termination on this board
     #define TERMINATOR_PORTS    GPIOB
+    #define MAX_CAN_BAUDRATE    5  // CAN transceiver chip limits to 5 Mbaud
+    #define ALLOW_DISABLE_BOOT0 0  // not required on this processor (BOOT0 is not shared with CAN RX)
 #elif defined(F072_Multiboard)
     // FYSETC CANable / generic STM32F072CBT6 board with SN65HVD230 transceiver.
     // CAN_RX = PB8, CAN_TX = PB9, USB on PA11/PA12 (native), 8 MHz HSE crystal.
@@ -311,8 +323,18 @@ typedef enum // sent as 8 bit
     #define CAN_TRANSCEIVER_RS_PIN     GPIO_PIN_13
     #define CAN_TRANSCEIVER_RS_PORT    GPIOC
     #define CAN_TRANSCEIVER_RS_ENABLE  __HAL_RCC_GPIOC_CLK_ENABLE
+    #define MAX_CAN_BAUDRATE    1  // classic bxCAN: 1 Mbaud max (no CAN FD)
+    #define ALLOW_DISABLE_BOOT0 0  // not supported on this processor
 #else
     #error "TARGET_BOARD not defined in makefile"
+#endif
+
+// ---- Defaults for boards that don't specify the transceiver/BOOT0 caps ----
+#ifndef MAX_CAN_BAUDRATE
+    #define MAX_CAN_BAUDRATE    8  // safe default transceiver data-rate ceiling (Mbaud)
+#endif
+#ifndef ALLOW_DISABLE_BOOT0
+    #define ALLOW_DISABLE_BOOT0 0  // conservative default: don't expose BOOT0-disable
 #endif
 
 

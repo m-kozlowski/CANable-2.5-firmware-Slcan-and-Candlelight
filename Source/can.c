@@ -72,6 +72,17 @@ void can_init()
 
         can_inst[C].handle.Instance = SET_CanInterfaces[C];
     }
+
+#if defined(CAN_TRX_ENABLE_PIN)
+    // Enable the CAN transceiver chip, if the board gates it behind a GPIO (WeActStudio v2).
+    GPIO_InitStruct.Pin       = CAN_TRX_ENABLE_PIN;
+    GPIO_InitStruct.Mode      = GPIO_MODE_OUTPUT_PP;
+    GPIO_InitStruct.Alternate = 0;
+    GPIO_InitStruct.Pull      = GPIO_NOPULL;
+    GPIO_InitStruct.Speed     = GPIO_SPEED_FREQ_LOW;
+    HAL_GPIO_Init(CAN_TRX_ENABLE_PORT, &GPIO_InitStruct);
+    HAL_GPIO_WritePin(CAN_TRX_ENABLE_PORT, CAN_TRX_ENABLE_PIN, CAN_TRX_ENABLE_ON);
+#endif
 }
 
 // called from init() and close() --> reset variable for the next can_open().
@@ -719,6 +730,13 @@ eFeedback can_set_data_baudrate(int channel, can_data_bitrate bitrate)
         inst->bitrate_data.Brp = 0; // baudrate not valid
         return FBK_ParamOutOfRange;
     }
+
+    // Reject data rates the board's transceiver chip cannot handle (e.g. 8 Mbaud on a 5 Mbaud board).
+    if (can_calc_baud(&inst->bitrate_data) > MAX_CAN_BAUDRATE * 1000000)
+    {
+        inst->bitrate_data.Brp = 0; // baudrate not valid
+        return FBK_ParamOutOfRange;
+    }
     return FBK_Success;
 }
 
@@ -735,6 +753,11 @@ eFeedback can_set_nom_bit_timing(int channel, uint32_t BRP, uint32_t Seg1, uint3
         !IS_FDCAN_NOMINAL_TSEG2    (Seg2) ||
         !IS_FDCAN_NOMINAL_SJW      (Sjw))
             return FBK_ParamOutOfRange;
+
+    // Reject baudrates the board's transceiver chip cannot handle.
+    can_bitrate_cfg cfg = { BRP, Seg1, Seg2, Sjw };
+    if (can_calc_baud(&cfg) > MAX_CAN_BAUDRATE * 1000000)
+        return FBK_ParamOutOfRange;
 
     inst->bitrate_nominal.Brp  = BRP;
     inst->bitrate_nominal.Seg1 = Seg1;
@@ -757,6 +780,11 @@ eFeedback can_set_data_bit_timing(int channel, uint32_t BRP, uint32_t Seg1, uint
         !IS_FDCAN_DATA_TSEG2    (Seg2) ||
         !IS_FDCAN_DATA_SJW      (Sjw))
             return FBK_ParamOutOfRange;
+
+    // Reject baudrates the board's transceiver chip cannot handle.
+    can_bitrate_cfg cfg = { BRP, Seg1, Seg2, Sjw };
+    if (can_calc_baud(&cfg) > MAX_CAN_BAUDRATE * 1000000)
+        return FBK_ParamOutOfRange;
 
     inst->bitrate_data.Brp  = BRP;
     inst->bitrate_data.Seg1 = Seg1;

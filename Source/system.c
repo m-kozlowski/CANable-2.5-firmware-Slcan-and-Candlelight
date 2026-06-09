@@ -512,6 +512,13 @@ bool system_is_option_enabled(eOptionBytes e_Option)
 // ====================================================================================================
 eFeedback system_set_option_bytes(eOptionBytes e_Option)
 {
+    // Boards can opt out of exposing BOOT0-disable even if the chip supports it
+    // (e.g. WeActStudio v2, whose hardware already holds BOOT0 low correctly).
+#if ALLOW_DISABLE_BOOT0 == 0
+    if (e_Option == OPT_BOOT0_Disable)
+        return FBK_UnsupportedFeature;
+#endif
+
 #if !defined(MCU_HAS_PROGRAMMABLE_BOOT0)
     // Chip doesn't expose programmable BOOT0 (G0B1, F072). BOOT0 is enabled
     // by factory default, so OPT_BOOT0_Enable is a no-op success (this lets
