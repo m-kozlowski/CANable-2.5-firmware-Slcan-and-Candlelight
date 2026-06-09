@@ -660,7 +660,12 @@ eFeedback can_set_data_baudrate(int channel, can_data_bitrate bitrate)
         return FBK_InvalidParameter;
     uint32_t baud_hz = slcan_data_baud_hz[bitrate];
 
-    const uint32_t target_data_tq = 32U;  // moderate; falls back as needed
+    // Preferred data-phase TQ count; chip-specific (depends on the FDCAN
+    // kernel clock so common rates land on an integer Brp). Falls back below.
+    #ifndef MCU_DATA_TQ
+        #define MCU_DATA_TQ 32U
+    #endif
+    const uint32_t target_data_tq = MCU_DATA_TQ;
     uint32_t brp   = MCU_FDCAN_CLOCK_HZ / (baud_hz * target_data_tq);
     uint32_t total = target_data_tq;
     if (brp >= 1 && brp * baud_hz * target_data_tq == MCU_FDCAN_CLOCK_HZ) {

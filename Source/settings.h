@@ -168,8 +168,14 @@ typedef enum // sent as 8 bit
     // FDCAN1 IT0 shares its NVIC vector with TIM16 on G0.
     #define MCU_FDCAN_NVIC_IRQn         TIM16_FDCAN_IT0_IRQn
     #define MCU_FDCAN_IRQ_HANDLER       TIM16_FDCAN_IT0_IRQHandler
-    #define MCU_FDCAN_CLOCK_HZ          64000000U
-    #define MCU_NOMINAL_TQ              64U
+    // Deliberately clocked at 60 MHz, NOT the 64 MHz maximum: 64 MHz cannot
+    // produce an exact 5 Mbaud CAN-FD data rate (64/5 = 12.8 -> non-integer),
+    // and 5 Mbaud is this board's transceiver ceiling. 60 MHz divides cleanly
+    // by every supported rate up to 5 Mbaud. See system.c for the PLL setup.
+    // (8 Mbaud is unreachable at 60 MHz, but the transceiver can't do it anyway.)
+    #define MCU_FDCAN_CLOCK_HZ          60000000U
+    #define MCU_NOMINAL_TQ              60U   // 60e6 / 60 -> exact Brp for all nominal rates
+    #define MCU_DATA_TQ                 12U   // 60e6 / 12 -> exact 5/1/0.5 Mbaud; 2/4M fall back cleanly
     #define MCU_HAS_FLASH_BANK_FIELD
     #define MCU_NEEDS_USB_VOLTAGE_DETECTOR
     #define MCU_NEEDS_SYSCFG_FOR_USB_IRQ

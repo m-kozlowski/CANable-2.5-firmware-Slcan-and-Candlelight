@@ -77,9 +77,19 @@ bool system_init(void)
 
 #if defined(STM32G0B1xx)
     // ----------------- STM32G0B1CBT6 (WeAct USB2CANFDV1) ----------------
-    // 16 MHz HSE -> /2 -> x16 PLL VCO=128 MHz.  PLLR=/2 -> SYSCLK 64 MHz.
-    // PCLK1 = HCLK = 64 MHz feeds FDCAN. USB clock comes from HSI48 + CRS.
+    // 16 MHz HSE -> /1 -> x15 PLL VCO=240 MHz.  PLLR=/4 -> SYSCLK 60 MHz.
+    // PCLK1 = HCLK = 60 MHz feeds FDCAN. USB clock comes from HSI48 + CRS.
     // G0 has no voltage-scaling boost step and a single APB.
+    //
+    // WHY 60 MHz AND NOT THE 64 MHz MAXIMUM:
+    //   The FDCAN data rate is kernel_clock / (Brp * tq). At 64 MHz a 5 Mbaud
+    //   data phase needs 64/5 = 12.8 tq -> no integer solution, so can.c's
+    //   bit-timing solver rejects 5 Mbaud entirely. 60 MHz divides cleanly by
+    //   every supported rate up to 5 Mbaud (this board's transceiver ceiling),
+    //   so we trade 4 MHz of headroom for an exact 5 Mbaud. 8 Mbaud becomes
+    //   unreachable, but the transceiver can't do 8 Mbaud anyway.
+    //   MCU_FDCAN_CLOCK_HZ / MCU_NOMINAL_TQ / MCU_DATA_TQ in settings.h MUST
+    //   stay in sync with this frequency.
 
     RCC_OscInitTypeDef RCC_OscInitStruct = {0};
     RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSE | RCC_OSCILLATORTYPE_HSI48;
@@ -88,17 +98,17 @@ bool system_init(void)
     RCC_OscInitStruct.PLL.PLLState   = RCC_PLL_ON;
     RCC_OscInitStruct.PLL.PLLSource  = RCC_PLLSOURCE_HSE;
     #if HSE_VALUE == 16000000
-        RCC_OscInitStruct.PLL.PLLM   = RCC_PLLM_DIV2;   // 16 MHz / 2 = 8 MHz PLL input
-        RCC_OscInitStruct.PLL.PLLN   = 16;              // 8 * 16 = 128 MHz VCO
+        RCC_OscInitStruct.PLL.PLLM   = RCC_PLLM_DIV1;   // 16 MHz PLL input
+        RCC_OscInitStruct.PLL.PLLN   = 15;              // 16 * 15 = 240 MHz VCO
     #elif HSE_VALUE == 8000000
         RCC_OscInitStruct.PLL.PLLM   = RCC_PLLM_DIV1;   // 8 MHz PLL input
-        RCC_OscInitStruct.PLL.PLLN   = 16;              // 128 MHz VCO
+        RCC_OscInitStruct.PLL.PLLN   = 30;              // 8 * 30 = 240 MHz VCO
     #else
         #error "Unsupported HSE_VALUE for STM32G0B1xx; add a branch in system.c"
     #endif
-    RCC_OscInitStruct.PLL.PLLP       = RCC_PLLP_DIV2;   // 64 MHz (unused outside ADC)
-    RCC_OscInitStruct.PLL.PLLQ       = RCC_PLLQ_DIV2;   // 64 MHz (unused: USB on HSI48)
-    RCC_OscInitStruct.PLL.PLLR       = RCC_PLLR_DIV2;   // 64 MHz SYSCLK
+    RCC_OscInitStruct.PLL.PLLP       = RCC_PLLP_DIV4;   // 60 MHz (unused outside ADC)
+    RCC_OscInitStruct.PLL.PLLQ       = RCC_PLLQ_DIV4;   // 60 MHz (unused: USB on HSI48)
+    RCC_OscInitStruct.PLL.PLLR       = RCC_PLLR_DIV4;   // 60 MHz SYSCLK
     if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK)
         return false;
 
@@ -106,15 +116,15 @@ bool system_init(void)
     RCC_ClkInitTypeDef RCC_ClkInitStruct = {0};
     RCC_ClkInitStruct.ClockType      = RCC_CLOCKTYPE_SYSCLK | RCC_CLOCKTYPE_HCLK | RCC_CLOCKTYPE_PCLK1;
     RCC_ClkInitStruct.SYSCLKSource   = RCC_SYSCLKSOURCE_PLLCLK;
-    RCC_ClkInitStruct.AHBCLKDivider  = RCC_SYSCLK_DIV1;     // HCLK  = 64 MHz
-    RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV1;       // PCLK1 = 64 MHz
+    RCC_ClkInitStruct.AHBCLKDivider  = RCC_SYSCLK_DIV1;     // HCLK  = 60 MHz
+    RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV1;       // PCLK1 = 60 MHz
     if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_2) != HAL_OK)
         return false;
 
     RCC_PeriphCLKInitTypeDef RCC_PeriphClkInit = {0};
     RCC_PeriphClkInit.PeriphClockSelection = RCC_PERIPHCLK_USB | RCC_PERIPHCLK_FDCAN;
     RCC_PeriphClkInit.UsbClockSelection    = RCC_USBCLKSOURCE_HSI48;
-    RCC_PeriphClkInit.FdcanClockSelection  = RCC_FDCANCLKSOURCE_PCLK1;   // 64 MHz
+    RCC_PeriphClkInit.FdcanClockSelection  = RCC_FDCANCLKSOURCE_PCLK1;   // 60 MHz
     if (HAL_RCCEx_PeriphCLKConfig(&RCC_PeriphClkInit) != HAL_OK)
         return false;
 
@@ -150,7 +160,7 @@ bool system_init(void)
     HAL_PWREx_EnableVddUSB();
     __HAL_RCC_SYSCFG_CLK_ENABLE();
 
-    canfd_clock = HAL_RCCEx_GetPeriphCLKFreq(RCC_PERIPHCLK_FDCAN); // 64 MHz
+    canfd_clock = HAL_RCCEx_GetPeriphCLKFreq(RCC_PERIPHCLK_FDCAN); // 60 MHz
 
     system_init_timestamp();
     // G0 has no programmable BoR levels in the same form as G4 and a
