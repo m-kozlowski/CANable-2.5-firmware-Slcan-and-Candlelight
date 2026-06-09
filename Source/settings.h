@@ -297,6 +297,35 @@ typedef enum // sent as 8 bit
     #define TERMINATOR_PORTS    GPIOB
     #define MAX_CAN_BAUDRATE    5  // CAN transceiver chip limits to 5 Mbaud
     #define ALLOW_DISABLE_BOOT0 0  // not required on this processor (BOOT0 is not shared with CAN RX)
+#elif defined(WeActUSB2CANFDV2)
+    // WeAct Studio USB2CANFD v2 board (STM32G431, FDCAN1, 16 MHz HSE).
+    // Smarter hardware than v1: the shared CAN-RXD/BOOT0 pin is held low by
+    // hardware so the board doesn't fall into the ROM bootloader on USB power,
+    // and the CAN transceiver chip is gated by PB7 (drive low to enable it).
+    // CAN pins (PB8/PB9), interface and AF use the G431 single-channel defaults.
+    //   PA0 = LED_RX (green), PA1 = LED_TX (blue), PA2 = LED_READY (red).
+    #define LED_TX_PINS         GPIO_PIN_1
+    #define LED_TX_PORTS        GPIOA
+    #define LED_RX_PINS         GPIO_PIN_0
+    #define LED_RX_PORTS        GPIOA
+    #define LED_MODE            GPIO_MODE_OUTPUT_PP
+    #define LED_ON              GPIO_PIN_SET
+    #define LED_OFF             GPIO_PIN_RESET
+    // Third LED on PA2 via our LED_READY plumbing (upstream calls it the power LED;
+    // our firmware uses it as a CAN-open/DFU status indicator, like the v1 board).
+    #define LED_READY_PIN       GPIO_PIN_2
+    #define LED_READY_PORT      GPIOA
+    #define LED_READY_ENABLE    __HAL_RCC_GPIOA_CLK_ENABLE
+    // -------------------
+    // CAN transceiver enable: PB7 must be driven low to take the transceiver out of standby.
+    #define CAN_TRX_ENABLE_PIN  GPIO_PIN_7
+    #define CAN_TRX_ENABLE_PORT GPIOB
+    #define CAN_TRX_ENABLE_ON   GPIO_PIN_RESET
+    // -------------------
+    #define TERMINATOR_PINS     -1                            // no GPIO-controlled termination on this board
+    #define TERMINATOR_PORTS    GPIOB
+    #define MAX_CAN_BAUDRATE    5  // CAN transceiver chip limits to 5 Mbaud
+    #define ALLOW_DISABLE_BOOT0 0  // hardware already holds BOOT0 low correctly
 #elif defined(F072_Multiboard)
     // FYSETC CANable / generic STM32F072CBT6 board with SN65HVD230 transceiver.
     // CAN_RX = PB8, CAN_TX = PB9, USB on PA11/PA12 (native), 8 MHz HSE crystal.

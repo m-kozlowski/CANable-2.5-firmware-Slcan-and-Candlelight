@@ -194,10 +194,13 @@ bool system_init(void)
     RCC_OscInitStruct.HSEState            = RCC_HSE_ON;             // enable HSE (High Speed External) quartz oscillator
     RCC_OscInitStruct.PLL.PLLSource       = RCC_PLLSOURCE_HSE;      // use external oscillator to feed the PLL
     
-    #if HSE_VALUE == 8000000    // 8 MHz quartz 
+    #if HSE_VALUE == 8000000    // 8 MHz quartz
         RCC_OscInitStruct.PLL.PLLM        = RCC_PLLM_DIV1;          // divide 8 MHz input clock / 1 --> 8 MHz
         RCC_OscInitStruct.PLL.PLLN        = 40;                     // multiply 8 MHz x 40 --> VCO frequency = 320 MHz (maximum 344 MHz)
-    #elif HSE_VALUE == 25000000 // 25 MHz quartz 
+    #elif HSE_VALUE == 16000000 // 16 MHz quartz (WeActStudio v2)
+        RCC_OscInitStruct.PLL.PLLM        = RCC_PLLM_DIV1;          // divide 16 MHz input clock / 1 --> 16 MHz
+        RCC_OscInitStruct.PLL.PLLN        = 20;                     // multiply 16 MHz x 20 --> VCO frequency = 320 MHz (maximum 344 MHz)
+    #elif HSE_VALUE == 25000000 // 25 MHz quartz
         RCC_OscInitStruct.PLL.PLLM        = RCC_PLLM_DIV5;          // divide 25 MHz input clock / 5 --> 5 MHz
         RCC_OscInitStruct.PLL.PLLN        = 64;                     // multiply 5 MHz x 64 --> VCO frequency = 320 MHz (maximum 344 MHz)
     #else

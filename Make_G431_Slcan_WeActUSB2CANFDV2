@@ -1,0 +1,27 @@
+
+# CANable Slcan Makefile (WeAct USB2CANFDV2 — STM32G431)
+
+######################################
+#
+# WeAct Studio USB2CANFD v2 board (STM32G431, 16 MHz quartz).
+# Unlike the v1 (STM32G0B1), the v2 uses a G431 and gates the CAN
+# transceiver behind PB7. See settings.h for the pinout details.
+#
+# Compile this by typing:
+#   make -s -f Make_G431_Slcan_WeActUSB2CANFDV2
+#
+#######################################
+
+# TARGET_BOARD and TARGET_MCU: maximum 24 characters!
+
+TARGET_FIRMWARE = Slcan
+TARGET_BOARD    = WeActUSB2CANFDV2
+TARGET_MCU      = STM32G431xx
+
+# This board has a 16 MHz quartz.
+QUARTZ_FREQU    = 16000000
+
+# name of the compiled files (*.bin, *.hex, *.elf)
+TARGET_FILE = STM32G431_Slcan2.5_WeActUSB2CANFDV2
+
+include GCC_Rules.mk
