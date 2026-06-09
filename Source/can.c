@@ -114,6 +114,9 @@ eFeedback can_open(int channel, uint32_t mode)
         // Reset all CAN instances FDCAN1, FDCAN2, FDCAN3 only if no channel is open
         __HAL_RCC_FDCAN_FORCE_RESET();
         __HAL_RCC_FDCAN_RELEASE_RESET();
+
+        // If all CAN channels are closed -> start the timestamps at zero
+        system_reset_timestamps();
     }
 
     buf_clear_can_buffer(channel);

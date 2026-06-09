@@ -93,7 +93,10 @@ typedef enum // transferred as 32 bit
     ELM_DevFlagProtocolElmue          = 0x04000, 
     // Do not send an echo for the successfully sent CAN packets (by default this is enabled in the Candlelight firmware)
     // The Tx event packet is sent in the moment when the ACK was recived. You can turn this off to reduce USB traffic.
-    ELM_DevFlagDisableTxEcho          = 0x08000, 
+    ELM_DevFlagDisableTxEcho          = 0x08000,
+    // IN:  If there are multiple CAN Rx packets waiting in the FIFO buffer -> optimize USB transfer by sendig them together in a blob.
+    // OUT: The host can always send multiple CAN Tx frames with kBlob and MSG_TxBlob even without setting this flag.
+    ELM_DevFlagSendUsbBlobs           = 0x10000,
 } eDeviceFlags;
 
 // ==============================================================================
@@ -416,6 +419,17 @@ typedef struct  // Legacy (size = 80 byte)
 // For more details see https://netcult.ch/elmue/CANable Firmware Update
 // ---------------------------------------------------------------------------------
 
+// The buffer size for USB In and OUT transfer.
+// Two buffers of this size are allocated per channel in buf_class. Upstream uses
+// 2048, but that was sized for G0/G4 parts; the bxCAN F072 has only 16 KB RAM and
+// carries classic-CAN traffic (<=8 data bytes), so a smaller blob there keeps a
+// safe stack margin without meaningfully hurting USB batching.
+#if defined(CAN_FAMILY_BXCAN)
+    #define MAX_BLOB_SIZE   512
+#else
+    #define MAX_BLOB_SIZE   2048
+#endif
+
 // Detail information about the board / firmware
 // added in february 2026 update
 typedef enum // 32 bit
@@ -526,15 +540,26 @@ typedef enum // 16 bit
 typedef enum // 8 bit
 {
     // received from host
-    MSG_TxFrame = 10, // the message contains a CAN frame to be sent to CAN bus (kTxFrameElmue)
+    MSG_TxFrame = 10, // 0x0A the message contains a CAN frame to be sent to CAN bus (kTxFrameElmue)
     // sent to host
-    MSG_TxEcho,       // the message contains the echo marker of a Tx CAN frame (kTxEchoElmue, can be disabled with ELM_DevFlagDisableTxEcho)    
-    MSG_RxFrame,      // the message contains a received CAN frame from CAN bus (kRxFrameElmue)
-    MSG_Error,        // the message contains multiple error flags (kErrorElmue, same format as legacy protocol, see buf_store_error())
-    MSG_String,       // the message contains an ASCII string to be displayed to the user (kStringElmue)
-    MSG_Busload,      // the message contains one byte which is the bus load in percent (kBusloadElmue)
+    MSG_TxEcho,       // 0x0B the message contains the echo marker of a Tx CAN frame (kTxEchoElmue, can be disabled with ELM_DevFlagDisableTxEcho)
+    MSG_RxFrame,      // 0x0C the message contains a received CAN frame from CAN bus (kRxFrameElmue)
+    MSG_Error,        // 0x0D the message contains multiple error flags (kErrorElmue, same format as legacy protocol, see buf_store_error())
+    MSG_String,       // 0x0E the message contains an ASCII string to be displayed to the user (kStringElmue)
+    MSG_Busload,      // 0x0F the message contains one byte which is the bus load in percent (kBusloadElmue)
+    MSG_TxBlob,       // 0x10 the message contains a blob (kBlob) with multiple kTxFrameElmue
+    MSG_RxBlob,       // 0x11 the message contains a blob (kBlob) with multiple kRxFrameElmue
 //  MSG_xxxx          // future expansions are easily possible
 } eMessageType;
+
+// Multiple CAN frames can be transferred in one blob (binary large object) to reduce the overhead of USB tokens and USB handshake.
+// This requires the flag ELM_DevFlagSendUsbBlobs to be set when opening the channel.
+// The maximum size of the entire blob are MAX_BLOB_SIZE bytes.
+typedef struct
+{
+    uint8_t  frame_count; // the count of kTxFrameElmue or kRxFrameElmue that follow after this header
+    uint8_t  msg_type;    // eMessageType = MSG_TxBlob or MSG_RxBlob
+} __packed __aligned(1) kBlob;
 
 // common header for all structs. Allows easily adding new features in the future.
 typedef struct 

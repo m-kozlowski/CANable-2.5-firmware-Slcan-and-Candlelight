@@ -37,6 +37,7 @@ uint32_t  system_get_can_clock();
 eMcuSerie system_get_mcu_serie();
 uint32_t  system_get_timestamp();
 uint32_t  system_get_timewrap();
+void      system_reset_timestamps();
 uint32_t  system_get_flash_addr(uint32_t segment);
 eFeedback system_write_flash(uint32_t segment, uint8_t* buffer, uint16_t data_len);
 

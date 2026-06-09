@@ -428,6 +428,18 @@ void HAL_FDCAN_TimestampWraparoundCallback(FDCAN_HandleTypeDef *hfdcan)
 }
 #endif
 
+// Reset the CAN packet timestamp counter to zero.
+// Called when the first CAN channel opens so timestamps start at 0.
+void system_reset_timestamps()
+{
+#if defined(CAN_FAMILY_FDCAN)
+    TIM3->CNT      = 0;
+    timestamp_wrap = 0;
+#elif defined(CAN_FAMILY_BXCAN)
+    TIM2->CNT      = 0;
+#endif
+}
+
 // ---------
 
 // get timestamp with 1 us precision

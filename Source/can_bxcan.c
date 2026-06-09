@@ -159,6 +159,9 @@ eFeedback can_open(int channel, uint32_t mode)
     {
         __HAL_RCC_CAN1_FORCE_RESET();
         __HAL_RCC_CAN1_RELEASE_RESET();
+
+        // If all CAN channels are closed -> start the timestamps at zero
+        system_reset_timestamps();
     }
 
     buf_clear_can_buffer(channel);

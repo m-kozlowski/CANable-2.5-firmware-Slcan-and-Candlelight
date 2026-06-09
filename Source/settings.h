@@ -10,6 +10,7 @@
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdbool.h>
 
 // Two helper macros because the precompiler is not able to conacatenate a string with a constant
 #define STR_HELPER(x) #x
@@ -18,11 +19,7 @@
 // ============================================================================================
 // The following enums are used for Slcan and Candlelight
 
-typedef enum
-{
-    false = 0,
-    true  = 1,
-} bool;
+// bool/true/false come from <stdbool.h> (was a local enum before USB Blob support).
 
 // If command feedback is enabled these error codes are sent to the host.
 // This enum is used for Slcan and for Candlelight.

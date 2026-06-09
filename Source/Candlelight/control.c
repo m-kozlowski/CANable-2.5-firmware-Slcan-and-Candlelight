@@ -58,7 +58,8 @@ void control_init()
                                    GS_DevFlagTimestamp      |
                                    GS_DevFlagIdentify       |
                                    ELM_DevFlagProtocolElmue |
-                                   ELM_DevFlagDisableTxEcho;
+                                   ELM_DevFlagDisableTxEcho |
+                                   ELM_DevFlagSendUsbBlobs;
 #if !defined(CAN_FAMILY_BXCAN)
     // CAN FD is only available on FDCAN-equipped MCUs (G4 family). The bxCAN
     // port (F072) cannot advertise FD or it will get GS_ReqSetBitTimingFD
@@ -396,17 +397,23 @@ void control_setup_OUT_data(USBD_HandleTypeDef *pdev)
 
             // ------------------------- 2.) Set Flags -------------------------------------
 
+            // set / reset global flag for all channels
             if (!can_is_any_open())
-                GLB_ProtoElmue = false; // reset global flag if all channels are closed
+                GLB_ProtoElmue = false;
+
+            if (dev_Mode->flags & ELM_DevFlagProtocolElmue) GLB_ProtoElmue = true;
+
+            // ----------------
 
             GLB_UserFlags[channel] = USR_CandleDefault; // reset channel flags to their default
             if (dev_Mode->flags &  GS_DevFlagOneShot)       GLB_UserFlags[channel] &= ~USR_Retransmit;
             if (dev_Mode->flags &  GS_DevFlagTimestamp)     GLB_UserFlags[channel] |=  USR_Timestamp;
             if (dev_Mode->flags & ELM_DevFlagDisableTxEcho) GLB_UserFlags[channel] &= ~USR_ReportTX;
-            if (dev_Mode->flags & ELM_DevFlagProtocolElmue) GLB_ProtoElmue = true;
 
             if (GLB_ProtoElmue)
             {
+                if (dev_Mode->flags & ELM_DevFlagSendUsbBlobs) GLB_UserFlags[channel] |= USR_SendBlobs;
+
                 for (int C=0; C<CHANNEL_COUNT; C++)
                 {
                     GLB_UserFlags[C] |= USR_DebugReport;
@@ -538,7 +545,7 @@ void control_report_busload(int channel, uint8_t busload_percent)
     if (!obj_to_host)
         return; // buffer overflow! buf_process() will report this error to the host
 
-    kBusloadElmue* packet = (kBusloadElmue*)&obj_to_host->frame;
+    kBusloadElmue* packet   = (kBusloadElmue*)obj_to_host->frame;
     packet->header.size     = sizeof(kBusloadElmue);
     packet->header.msg_type = MSG_Busload;
     packet->bus_load        = busload_percent;
@@ -575,7 +582,7 @@ bool control_send_debug_mesg(int channel, const char* message)
         len = 20;
     }
 
-    kStringElmue* packet = (kStringElmue*)&obj_to_host->frame;
+    kStringElmue* packet    = (kStringElmue*)obj_to_host->frame;
     packet->header.size     = sizeof(kStringElmue) + len;
     packet->header.msg_type = MSG_String;
     memcpy(packet->ascii_msg, message, len);

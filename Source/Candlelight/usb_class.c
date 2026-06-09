@@ -517,7 +517,11 @@ uint8_t USBD_GS_DataOut(USBD_HandleTypeDef *pdev, uint8_t epnum)
     int channel = EpToChannel[epnum & 0xF]; // epnum = 0x02 --> channel 0, 0x04 --> 1, 0x06 --> 2
     buf_class* usb_buf = buf_get_instance(channel);
 
-    buf_store_can_frame(channel, (kHostFrameLegacy*)usb_buf->from_host_buf);
+    // Legacy routes all traffic though interface 0
+    if (!GLB_ProtoElmue)
+        channel = 0;
+
+    buf_store_can_frame_blob(channel, usb_buf->from_host_buf);
 
     // pass the buffer from_host_buf to the HAL for the next frame to receive
     USBD_LL_PrepareReceive(pdev, epnum, usb_buf->from_host_buf, sizeof(usb_buf->from_host_buf));
@@ -618,48 +622,26 @@ bool USBD_GS_CustomRequest(USBD_HandleTypeDef *pdev, USBD_SetupReqTypedef *req)
 // ==================================== IN Transfer ==========================================
 
 // This function is called from the main loop only after usb_buf->TxBusy == false.
-// Send a frame to the host on IN endpoint, either kHostFrameLegacy or kHeader
-void USBD_SendFrameToHost(int channel, void* frame)
+// Send frame(s) to the host on IN endpoint, either kHostFrameLegacy or kRxFrameElmue or kBlob
+void USBD_SendInDataToHost(int channel, uint8_t* buf, uint16_t len)
 {
     // Legacy protocol routes all CAN channels through interface 0
     if (!GLB_ProtoElmue)
         channel = 0;
-    
-    buf_class* usb_buf = buf_get_instance(channel);
-    uint16_t len;
-    if (GLB_ProtoElmue) // new Elm�Soft protocol
-    {
-        // Using the optimized new Elm�Soft protocol reduces unnecessary USB overhead as it was sent by the legacy firmware.
-        // If a CAN frame has only 2 data bytes, send only 2 data bytes over USB.
-        // All Elm�Soft messages use the same header, no matter if CAN packet or an ASCII message.
-        len = ((kHeader*)frame)->size;
-    }
-    else // legacy Geschwister Schneider protocol
-    {
-        kHostFrameLegacy* pk_Legacy = (kHostFrameLegacy*)frame;
-        
-        // The legacy protocol is not intelligently designed. The timestamp is behind a fix 64 byte data array.
-        // For CAN FD it sends ALWAYS 76 or 80 bytes over USB no matter how many bytes the frame really has.
-        len = sizeof(kHostFrameLegacy); // 80 bytes
-        if ((pk_Legacy->flags & FRM_FDF) == 0) len -= 56;
-        if ((GLB_UserFlags[pk_Legacy->channel] & USR_Timestamp) == 0) len -= 4;
-    }
 
+    buf_class* usb_buf = buf_get_instance(channel);
     usb_buf->TxBusy  = true;
     usb_buf->SendZLP = len > 0 && (len % EP_DATA_PACKET_SIZE) == 0;
 
     // IMPORTANT:
     // USBD_LL_Transmit does not copy the frame data to another buffer.
-    // The HAL needs a pointer to a buffer that stays unchanged until all data has been sent.
+    // The HAL needs a pointer to a buffer that stays unchanged until all data has been sent: buf_class.to_host_buf
     // If the data exceeds the USB endpoint maximum packet size (64 byte), it will be sent in multiple USB packets.
-    memcpy(usb_buf->to_host_buf, frame, len);
-
-    // always returns HAL_OK
-    USBD_LL_Transmit(&GLB_UsbDevice, EndpointsIN[channel], usb_buf->to_host_buf, len);
+    USBD_LL_Transmit(&GLB_UsbDevice, EndpointsIN[channel], buf, len);
 }
 
 // interrupt callback
-// The data from USBD_SendFrameToHost() has been sent to the host on IN endpoint (0x81, 0x83, 0x85)
+// The data from USBD_SendInDataToHost() has been sent to the host on the IN endpoint (0x81, 0x83, 0x85)
 uint8_t USBD_GS_DataIn(USBD_HandleTypeDef *pdev, uint8_t epnum)
 {
     int channel = EpToChannel[epnum & 0xF]; // epnum = 0x81 --> channel 0, 0x83 --> 1, 0x85 --> 2
