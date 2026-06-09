@@ -143,29 +143,15 @@ void buf_enqueue_cdc(int channel, char* buf, uint16_t len)
     buf_cdc_tx.msglen[buf_cdc_tx.head] += len;
 }
 
-// -------------------------------------
+// ================================= To CAN ======================================
 
-// Get destination pointer of can tx frame header
-bool buf_get_can_dest(int channel, FDCAN_TxHeaderTypeDef** tx_header, uint8_t** tx_data)
-{
-    can_tx_buf* txbuf = &buf_can_tx[channel];
-    if (txbuf->full)
-    {
-        error_assert(channel, APP_CanTxOverflow, false);
-        return false;
-    }
-    *tx_header = &txbuf->header[txbuf->head];
-    *tx_data   = txbuf->data   [txbuf->head];
-    return true;
-}
-
-// Append the message in destination slot to the buffer.
-eFeedback buf_commit_can_dest(int channel)
+// Enqueue a Tx packet to be sent to CAN bus
+eFeedback buf_store_tx_packet(int channel, FDCAN_TxHeaderTypeDef* tx_header, uint8_t* tx_data)
 {
     eFeedback e_Feedback = can_is_tx_allowed(channel);
     if (e_Feedback != FBK_Success)
         return e_Feedback;
-    
+
     can_tx_buf* txbuf = &buf_can_tx[channel];
     if (txbuf->full)
     {
@@ -173,19 +159,22 @@ eFeedback buf_commit_can_dest(int channel)
         return FBK_TxBufferFull;
     }
 
+    memcpy(&txbuf->header[txbuf->head], tx_header, sizeof(FDCAN_TxHeaderTypeDef));
+    memcpy( txbuf->data  [txbuf->head], tx_data,   CAN_MAX_DATALEN);
+
     // Increment the head pointer
     txbuf->head = (txbuf->head + 1) % BUF_CAN_TXQUEUE_LEN;
-    if (txbuf->head == txbuf->tail) 
+    if (txbuf->head == txbuf->tail)
         txbuf->full = true;
-    
+
     return FBK_Success;
 }
 
-// ===========================================================================
+// ================================== To Host ======================================
 
 // a RX packet has been received from CAN bus or a Tx Packet has been successfully sent to CAN bus
-// frame_data is a 64 byte buffer with the received / sent data bytes
-void buf_store_rx_packet(int channel, FDCAN_RxHeaderTypeDef *rx_header, uint8_t *frame_data)
+// rx_data is a 64 byte buffer with the received / sent data bytes
+void buf_store_rx_packet(int channel, FDCAN_RxHeaderTypeDef* rx_header, uint8_t* rx_data)
 {
     char buf[SLCAN_MTU];
     if (rx_header->FDFormat == FDCAN_CLASSIC_CAN)
@@ -225,8 +214,8 @@ void buf_store_rx_packet(int channel, FDCAN_RxHeaderTypeDef *rx_header, uint8_t 
         int8_t byte_count = utils_dlc_to_byte_count(dlc_code); // returns -1 if invalid
         for (uint8_t j = 0; j < byte_count; j++)
         {
-            buf[pos++] = utils_nibble_to_ascii(frame_data[j] >> 4);
-            buf[pos++] = utils_nibble_to_ascii(frame_data[j] & 0x0F);
+            buf[pos++] = utils_nibble_to_ascii(rx_data[j] >> 4);
+            buf[pos++] = utils_nibble_to_ascii(rx_data[j] & 0x0F);
         }
     }
     

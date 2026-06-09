@@ -53,8 +53,8 @@ typedef struct
 } cdc_tx_buf;
 
 // Cirbuf structure for CAN TX frames
-// buf_can_tx is written in control_parse_command() -> buf_commit_can_dest() when a frame has been received from the host
-typedef struct 
+// written in control_parse_command() when a frame has been received from the host
+typedef struct
 {
     FDCAN_TxHeaderTypeDef header[BUF_CAN_TXQUEUE_LEN];   // Header buffer
     uint8_t  data[BUF_CAN_TXQUEUE_LEN][CAN_MAX_DATALEN]; // Data buffer
@@ -64,13 +64,11 @@ typedef struct
     bool     full;                                       // Set this when we are full, clear when the tail moves one.
 } can_tx_buf;
 
-void  buf_init();
-void  buf_process(int channel, uint32_t tick_now);
-void  buf_enqueue_cdc(int channel, char* buf, uint16_t len);
-bool  buf_get_can_dest(int channel, FDCAN_TxHeaderTypeDef** tx_header, uint8_t** tx_data);
-void  buf_clear_can_buffer(int channel);
-void  buf_store_tx_echo(int channel, FDCAN_TxEventFifoTypeDef* tx_event);
-void  buf_store_rx_packet(int channel, FDCAN_RxHeaderTypeDef *frame_header, uint8_t *frame_data);
-
-eFeedback buf_commit_can_dest(int channel);
+void      buf_init();
+void      buf_process(int channel, uint32_t tick_now);
+void      buf_enqueue_cdc(int channel, char* buf, uint16_t len);
+void      buf_clear_can_buffer(int channel);
+void      buf_store_tx_echo  (int channel, FDCAN_TxEventFifoTypeDef* tx_event);
+eFeedback buf_store_tx_packet(int channel, FDCAN_TxHeaderTypeDef*    tx_header, uint8_t* tx_data);
+void      buf_store_rx_packet(int channel, FDCAN_RxHeaderTypeDef*    rx_header, uint8_t* rx_data);
 

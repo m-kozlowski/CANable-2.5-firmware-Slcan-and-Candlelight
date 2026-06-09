@@ -1,6 +1,6 @@
 /*
     The MIT License
-    Implemenatation of Legacy USB GS Class (Geschwister Schneider) and the new ElmüSoft CANable 2.5 protocol
+    Implemenatation of Legacy USB GS Class (Geschwister Schneider) and the new Elmï¿½Soft CANable 2.5 protocol
     Copyright (c) 2025 ElmueSoft / Hubert Denkmair
     https://netcult.ch/elmue/CANable Firmware Update
     
@@ -22,7 +22,7 @@ typedef enum // transferred as 8 bit
     GS_ReqBerrReport,          // -- not implemented, undocumented 
     GS_ReqGetCapabilities,     // kCapabilityClassic: get supported features and processor limits of timing for classic frames
     GS_ReqGetDeviceVersion,    // kDeviceVersion: get version numbers
-    GS_ReqGetTimestamp,        // uint32_t: get firmware 1 µs timestamp (Needs roll over detection! Roll over after one hour!)
+    GS_ReqGetTimestamp,        // uint32_t: get firmware 1 ï¿½s timestamp (Needs roll over detection! Roll over after one hour!)
     GS_ReqIdentify,            // uint32_t (ignored): blink LEDs for device identification
     GS_ReqGetUserID,           // -- not implemented, undocumented  (WTF is a user ID ??)
     GS_ReqSetUserID,           // -- not implemented, undocumented  (WTF is a user ID ??)
@@ -32,8 +32,8 @@ typedef enum // transferred as 8 bit
     GS_ReqGetTermination,      // eTermination: get status of 120 Ohm termination resistor (if supported by the board)
     GS_ReqGetState,            // kDeviceState: not implemented, undocumented
 
-    // ----------- ELM commands added by ElmüSoft -----------
-    ELM_ReqFIRST        = 20,  // First request that requires ElmüSoft protocol to be enabled
+    // ----------- ELM commands added by Elmï¿½Soft -----------
+    ELM_ReqFIRST        = 20,  // First request that requires Elmï¿½Soft protocol to be enabled
     ELM_ReqGetBoardInfo = 20,  // kBoardInfo: get name about target board and processor
     ELM_ReqSetFilter,          // kFilter: set up to 8 acceptance mask filters
     ELM_ReqGetLastError,       // uint8_t: get the eFeedback error of the last SETUP request. This works also in legacy mode!
@@ -85,9 +85,9 @@ typedef enum // transferred as 32 bit
     // It is not required that the host application must poll errors. They are reported automatically when the error status changes.
     GS_DevFlagGetState                = 0x02000,
 
-    // ----------- ELM flags added by ElmüSoft -----------
-    // Switch to the new extended ElmüSoft CANable 2.5 protocol (use kHostFrameElmue instead of kHostFrameLegacy)  
-    // ATTENTION: This flag enables the ElmüSoft protocol for ALL channels and it stays enabled until all channels have been closed!
+    // ----------- ELM flags added by Elmï¿½Soft -----------
+    // Switch to the new extended Elmï¿½Soft CANable 2.5 protocol (use kHostFrameElmue instead of kHostFrameLegacy)  
+    // ATTENTION: This flag enables the Elmï¿½Soft protocol for ALL channels and it stays enabled until all channels have been closed!
     // This flag also enables debug reports (USR_DebugReport).
     // In the Capabilities this flag means that all ELM_ReqXXX commands are supported.
     ELM_DevFlagProtocolElmue          = 0x04000, 
@@ -213,7 +213,7 @@ typedef struct
 // =========================== ERROR REPORT =============================
 
 // The majority of the following errors are not supported by the STM32 processors.
-// ElmüSoft error status has been inserted in data byte 5 which was always zero before.
+// Elmï¿½Soft error status has been inserted in data byte 5 which was always zero before.
 
 // The errors are sent in the CAN ID and in the data bytes of a special error frame.
 // CanID   = eErrFlagsCanID
@@ -222,7 +222,7 @@ typedef struct
 // data[2] = eErrFlagsByte2
 // data[3] = eErrFlagsByte3
 // data[4] = eErrFlagsByte4_Hi + eErrFlagsByte4_Lo
-// data[5] = ElmüSoft has added missing error flags here: eErrorAppFlags (see settings.h)
+// data[5] = Elmï¿½Soft has added missing error flags here: eErrorAppFlags (see settings.h)
 // data[6] = Tx Error count
 // data[7] = Rx Error count
 
@@ -239,14 +239,14 @@ typedef enum // transferred as 32 bit
     ERID_Bus_is_off           = 0x0040,   // bus off 
     ERID_Bus_error            = 0x0080,   // bus error
     ERID_Controller_restarted = 0x0100,   // controller restarted
-    ERID_CRC_Error            = 0x0200,   // added by ElmüSoft
+    ERID_CRC_Error            = 0x0200,   // added by Elmï¿½Soft
 } eErrFlagsCanID;
 
 // Bus Status
 typedef enum // transferred as 8 bit 
 {
-    ER1_Rx_Buffer_Overflow         = 0x01, // RX buffer overflow (only for legacy, ElmüSoft sends eErrorAppFlags)
-    ER1_Tx_Buffer_Overflow         = 0x02, // TX buffer overflow (only for legacy, ElmüSoft sends eErrorAppFlags)
+    ER1_Rx_Buffer_Overflow         = 0x01, // RX buffer overflow (only for legacy, Elmï¿½Soft sends eErrorAppFlags)
+    ER1_Tx_Buffer_Overflow         = 0x02, // TX buffer overflow (only for legacy, Elmï¿½Soft sends eErrorAppFlags)
     ER1_Rx_Errors_at_warning_level = 0x04, // reached warning level at > 96 RX errors
     ER1_Tx_Errors_at_warning_level = 0x08, // reached warning level at > 96 TX errors
     ER1_Rx_Passive_status_reached  = 0x10, // reached error passive status RX at > 128 errors
@@ -357,7 +357,7 @@ typedef enum // 32 bit
 typedef struct  // Legacy
 {
     uint8_t  data[8];
-    uint32_t timestamp_us; // precision 1 µs (Needs roll over detection! Roll over after one hour!)
+    uint32_t timestamp_us; // precision 1 ï¿½s (Needs roll over detection! Roll over after one hour!)
 } __packed kPacketClassic;
 
 // This is an incredibly stupid design.
@@ -366,7 +366,7 @@ typedef struct  // Legacy
 typedef struct  // Legacy  
 {
     uint8_t  data[64];
-    uint32_t timestamp_us; // precision 1 µs (Needs roll over detection! Roll over after one hour!)
+    uint32_t timestamp_us; // precision 1 ï¿½s (Needs roll over detection! Roll over after one hour!)
 } __packed kPacketFD;
 
 // ---------------------------
@@ -391,11 +391,11 @@ typedef struct  // Legacy (size = 80 byte)
 
 
 // ###############################################################################
-//     New ElmüSoft CANable 2.5 Protocol (optimnized for max USB throughput)
+//     New Elmï¿½Soft CANable 2.5 Protocol (optimnized for max USB throughput)
 // ###############################################################################
 
 // Geschwister Schneider have designed the above structs which have later been adapted on Github to support CAN FD.
-// There are several design errors in the legacy Candlelight protocol that have been fixed in the new ElmüSoft protocol.
+// There are several design errors in the legacy Candlelight protocol that have been fixed in the new Elmï¿½Soft protocol.
 // These errors reduce the possible USB data throughput unneccessarily.
 // We have only a Full Speed USB interface (12 MBit) and want to transfer as much as possible CAN data which may come with 10 Mbaud.
 //
@@ -409,9 +409,9 @@ typedef struct  // Legacy (size = 80 byte)
 //
 // However, the legacy GS protocol with all it's design errors is still implemented here for backward compatibility with legacy software.
 // You have to set ELM_DevFlagProtocolElmue to enable the new CANable 2.5 protocol which optimizes USB transfer to the maximum.
-// Additionally the new ElmüSoft protocol can send string messages and calculates the bus load and has a lots of bugfixes.
+// Additionally the new Elmï¿½Soft protocol can send string messages and calculates the bus load and has a lots of bugfixes.
 // See subfolder "SampleApplication C++" for a sample code how to generate precise timestamps using the performance counter in the CPU.
-// The legacy code was very difficult to understand because the authors were too lazy to write comments. This has been fixed by ElmüSoft.
+// The legacy code was very difficult to understand because the authors were too lazy to write comments. This has been fixed by Elmï¿½Soft.
 // A new error reporting has been implemented that sends bus errors (passive, bus off, error counters) in an efficient way to the host.
 // For more details see https://netcult.ch/elmue/CANable Firmware Update
 // ---------------------------------------------------------------------------------
@@ -437,23 +437,34 @@ typedef struct
 
 // -----------------------------------------
 
-// 8 bit = 256 possible operations
+// ELM_ReqSetFilter
 typedef enum // 8 bit
 {
-    FIL_ClearAll = 0,    // remove all filters
-    FIL_AcceptMask11bit, // add a new acceptance mask filter for 11 bit CAN IDs
-    FIL_AcceptMask29bit, // add a new acceptance mask filter for 29 bit CAN IDs
-//  FIL_xxxx             // future expansions are easily possible
+    FIL_HostClear = 0,    // remove all host filters (adapter must be closed)
+    FIL_HostPass_11,      // add a new host pass mask filter for 11 bit CAN IDs to be sent to the host over USB
+    FIL_HostPass_29,      // add a new host pass mask filter for 29 bit CAN IDs to be sent to the host over USB
+    // ------------------
+    // Bridge Mode (only for multi-channel adapters):
+    FIL_BridgeClear = 10, // remove one of the bridge filters. If kFilter.Index = 0xFF --> clear all bridge filters.
+    FIL_BridgePass_11,    // set a bridge pass  mask filter for 11 bit CAN IDs to be forwarded to kFilter.DestChannel
+    FIL_BridgePass_29,    // set a bridge pass  mask filter for 29 bit CAN IDs to be forwarded to kFilter.DestChannel
+    FIL_BridgeBlock_11,   // set a bridge block mask filter for 11 bit CAN IDs to be blocked (not forwarded to kFilter.DestChannel)
+    FIL_BridgeBlock_29,   // set a bridge block mask filter for 29 bit CAN IDs to be blocked (not forwarded to kFilter.DestChannel)
+    // ------------------
+//  FIL_xxxx              // future expansions are easily possible
 } eFilterOperation;
 
 // ELM_ReqSetFilter
 typedef struct
 {
-    uint8_t  Operation; // eFilterOperation
-    uint32_t Filter;    // the filter (e.g. 0x7E0), ignored for Operation FIL_ClearAll
-    uint32_t Mask;      // the mask   (e.g. 0x7FF), ignored for Operation FIL_ClearAll
-    uint32_t Reserved1;
-    uint32_t Reserved2;
+    // all filters:
+    uint8_t  Operation;   // eFilterOperation
+    uint32_t Filter;      // the filter (e.g. 0x7E0)
+    uint32_t Mask;        // the mask   (e.g. 0x7FF)
+    // only for bridge filters:
+    uint8_t  Index;       // filter index
+    uint8_t  DestChannel; // destination channel
+    uint8_t  Reserved[6];
 } __packed __aligned(1) kFilter;
 
 
@@ -556,7 +567,7 @@ typedef struct
     uint8_t  flags;             // eFrameFlags    
     uint32_t can_id;            // CAN ID + eCanIdFlags
     uint8_t  data_no_stamp[0];  // data start if timestamps are off (highest possible USB transmission speed)
-    uint32_t timestamp;         // timestamp with 1 µs precision, only sent to host if GS_DevFlagTimestamp has been set, roll over detection required!
+    uint32_t timestamp;         // timestamp with 1 ï¿½s precision, only sent to host if GS_DevFlagTimestamp has been set, roll over detection required!
     uint8_t  data_use_stamp[0]; // data start if timestamps are transmitted
 } __packed __aligned(1) kRxFrameElmue;
 
@@ -565,7 +576,7 @@ typedef struct
 {
     kHeader  header;      // MSG_TxEcho
     uint8_t  marker;      // the same marker that was sent in kTxFrameElmue sent back to the host when the packet was ACKnowledged on CAN bus.
-    uint32_t timestamp;   // timestamp with 1 µs precision, only sent to host if GS_DevFlagTimestamp has been set, roll over detection required!
+    uint32_t timestamp;   // timestamp with 1 ï¿½s precision, only sent to host if GS_DevFlagTimestamp has been set, roll over detection required!
 } __packed __aligned(1) kTxEchoElmue;
 
 // see buf_store_error()
@@ -574,7 +585,7 @@ typedef struct
     kHeader  header;      // MSG_Error
     uint32_t err_id;      // eErrFlagsCanID
     uint8_t  err_data[8]; // several error flags and error counters
-    uint32_t timestamp;   // timestamp with 1 µs precision, only sent to host if GS_DevFlagTimestamp has been set, roll over detection required!
+    uint32_t timestamp;   // timestamp with 1 ï¿½s precision, only sent to host if GS_DevFlagTimestamp has been set, roll over detection required!
 } __packed __aligned(1) kErrorElmue;
 
 // see control_send_debug_mesg()

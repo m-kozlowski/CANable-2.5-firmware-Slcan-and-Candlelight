@@ -33,8 +33,11 @@ can_class            can_inst[CHANNEL_COUNT] = {0};
 // ----- Private Methods
 void      can_reset(int channel);
 void      can_print_info(int channel);
-bool      can_apply_filters(can_class* inst);
+bool      can_apply_host_filters(can_class* inst);
 uint32_t  can_calc_bit_count_in_frame(can_class* inst, FDCAN_RxHeaderTypeDef *header);
+#if CHANNEL_COUNT > 1
+void      can_forward_bridge_packet(can_class* inst, FDCAN_RxHeaderTypeDef* rx_header, uint8_t* rx_data);
+#endif
 
 // Initialize CAN peripheral settings, but don't actually start the peripheral
 // called from the main loop
@@ -86,6 +89,9 @@ void can_reset(int channel)
     inst->tx_pending       = 0;
     inst->is_open          = false;
 
+    // clear all bridge filters (no-op on single-channel boards)
+    can_set_bridge_filter(channel, 0, 0xFF, false, false, false, 0, 0);
+
     // this is indispensable here, otherwise Slcan is dead after a Tx buffer overlow and closing the adapter.
     buf_clear_can_buffer(channel);
 }
@@ -112,7 +118,10 @@ eFeedback can_open(int channel, uint32_t mode)
 
     buf_clear_can_buffer(channel);
     error_init(channel);
-    led_blink_identify(channel, false); // stop identify blinking
+
+    // stop identify blinking on all channels
+    for (int C=0; C<CHANNEL_COUNT; C++)
+        led_blink_identify(C, false);
 
     inst->open_mode = mode;
 
@@ -223,7 +232,7 @@ eFeedback can_open(int channel, uint32_t mode)
     // -------------------- filters --------------------------
 
     // Store all user filters in can_filters into the processor's memory
-    if (!can_apply_filters(inst))
+    if (!can_apply_host_filters(inst))
         return FBK_ErrorFromHAL;
 
     // the user can define up to 8 filters
@@ -323,7 +332,8 @@ void can_process(int channel, uint32_t tick_now)
         // Here tx_event.EventType is FDCAN_TX_IN_SPITE_OF_ABORT if auto retransmission is disabled.
         // "In DAR mode (Disable Auto Retransmission) all transmissions are automatically canceled after
         // they have been started on the CAN bus." (see "STM32G4 Series - Chapter FDCAN.pdf" in subfolder "Documentation")
-        if (GLB_UserFlags[channel] & USR_ReportTX)
+        // A marker of zero must not send an echo to the host! (e.g. forwarded bridge packets)
+        if ((GLB_UserFlags[channel] & USR_ReportTX) && tx_event.MessageMarker > 0)
         {
             // convert 16 bit timestamp --> 32 bit
             tx_event.TxTimestamp = (system_get_timewrap() << 16) | tx_event.TxTimestamp;
@@ -360,6 +370,10 @@ void can_process(int channel, uint32_t tick_now)
         rx_header.RxTimestamp = (system_get_timewrap() << 16) | rx_header.RxTimestamp;
         buf_store_rx_packet(channel, &rx_header, can_data_buf);
 
+#if CHANNEL_COUNT > 1
+        if (inst->bridge_active)
+            can_forward_bridge_packet(inst, &rx_header, can_data_buf);
+#endif
         // for bus load calculation
         inst->bit_count_total += can_calc_bit_count_in_frame(inst, &rx_header);
 
@@ -370,6 +384,10 @@ void can_process(int channel, uint32_t tick_now)
     // Rx FIFO 0 and Rx FIFO 1 can store up to three packets each.
     if (HAL_FDCAN_GetRxMessage(&inst->handle, FDCAN_RX_FIFO1, &rx_header, can_data_buf) == HAL_OK)
     {
+#if CHANNEL_COUNT > 1
+        if (inst->bridge_active)
+            can_forward_bridge_packet(inst, &rx_header, can_data_buf);
+#endif
         // for bus load calculation
         inst->bit_count_total += can_calc_bit_count_in_frame(inst, &rx_header);
 
@@ -801,8 +819,9 @@ void can_print_info(int channel)
     }
 }
 
-// ----------------------------------------------------------------------------------------------
+// ------------------------------------- HOST FILTER -------------------------------------------
 
+// Set filters for Rx packets to be sent to the host over USB.
 // The processor allows up to 28 standard filters and up to 8 extended filters.
 // Nobody needs so many filters -> allow 8 user filters.
 // Rx FIFO 0 receives all packets that pass. They are sent to the host application over USB.
@@ -814,13 +833,13 @@ void can_print_info(int channel)
 // But HAL_FDCAN_ConfigFilter() can be called after opening the adapter.
 // So the only possible filter modification after opening the adapter is to modify ONE existing filter.
 // The filter type must be the same (11 bit or 29 bit).
-eFeedback can_set_mask_filter(int channel, bool extended, uint32_t filter, uint32_t mask)
+eFeedback can_add_host_filter(int channel, bool extended, uint32_t filter, uint32_t mask)
 {
     can_class* inst = &can_inst[channel];
 
     int tot_filters = inst->std_filter_count + inst->ext_filter_count;
-    if (tot_filters >= MAX_FILTERS)
-        return FBK_InvalidParameter;
+    if (tot_filters >= MAX_HOST_FILTERS)
+        return FBK_ParamOutOfRange;
 
     uint32_t maximum = extended ? 0x1FFFFFFF : 0x7FF;
     if (filter > maximum || mask > maximum)
@@ -842,7 +861,7 @@ eFeedback can_set_mask_filter(int channel, bool extended, uint32_t filter, uint3
         tot_filters = 0;
     }
 
-    FDCAN_FilterTypeDef* last_filter = &inst->filters[tot_filters];
+    FDCAN_FilterTypeDef* last_filter = &inst->host_filters[tot_filters];
     last_filter->IdType       = extended ? FDCAN_EXTENDED_ID : FDCAN_STANDARD_ID;
     last_filter->FilterIndex  = extended ? inst->ext_filter_count : inst->std_filter_count;
     last_filter->FilterType   = FDCAN_FILTER_MASK;
@@ -853,27 +872,27 @@ eFeedback can_set_mask_filter(int channel, bool extended, uint32_t filter, uint3
     if (extended) inst->ext_filter_count ++;
     else          inst->std_filter_count ++;
 
-    if (inst->is_open && !can_apply_filters(inst))
+    if (inst->is_open && !can_apply_host_filters(inst))
         return FBK_ErrorFromHAL;
 
     return FBK_Success;
 }
 
 // Store all user filters in can_filters into the processor's memory
-bool can_apply_filters(can_class* inst)
+bool can_apply_host_filters(can_class* inst)
 {
     // the user can define up to 8 filters
     int tot_filters = inst->std_filter_count + inst->ext_filter_count;
     for (int i=0; i<tot_filters; i++)
     {
-        if (HAL_FDCAN_ConfigFilter(&inst->handle, &inst->filters[i]) != HAL_OK)
+        if (HAL_FDCAN_ConfigFilter(&inst->handle, &inst->host_filters[i]) != HAL_OK)
             return false; // error detail in inst->handle.ErrorCode
     }
     return true;
 }
 
-// clear all filters
-eFeedback can_clear_filters(int channel)
+// clear all host filters (adapter must be closed)
+eFeedback can_clear_host_filters(int channel)
 {
     can_class* inst = &can_inst[channel];
 
@@ -884,6 +903,126 @@ eFeedback can_clear_filters(int channel)
     inst->std_filter_count = 0;
     return FBK_Success;
 }
+
+// -------------------------------------- BRIDGE FILTER ------------------------------------------
+
+// Set or remove a specific bridge filter for Rx packets to be forwarded from src_channel to dest_channel.
+// This function can also be called after the adapter has been opened.
+// All filters can be set / cleared individually by their index.
+// To clear all filters at once set enable = false and filter_index = 0xFF.
+// Returns FBK_UnsupportedFeature on single-channel boards (bridging needs >= 2 channels).
+eFeedback can_set_bridge_filter(int src_channel, int dest_channel, uint8_t filter_index,
+                                bool enable, bool extended, bool block, uint32_t filter, uint32_t mask)
+{
+#if CHANNEL_COUNT > 1
+    can_class* inst = &can_inst[src_channel];
+
+    if (enable) // set filter
+    {
+        if (dest_channel == src_channel || dest_channel >= CHANNEL_COUNT)
+            return FBK_ParamOutOfRange;
+
+        uint32_t maximum = extended ? 0x1FFFFFFF : 0x7FF;
+        if (filter > maximum || mask > maximum)
+            return FBK_ParamOutOfRange;
+    }
+    else // clear filter
+    {
+        // Index == 0xFF --> clear all filters
+        if (filter_index == 0xFF)
+        {
+            inst->bridge_active = false;
+            memset(&inst->bridge_filters, 0, sizeof(inst->bridge_filters));
+            return FBK_Success;
+        }
+    }
+
+    if (filter_index >= MAX_BRIDGE_FILTERS)
+        return FBK_ParamOutOfRange;
+
+    brg_filter* cur_filter = &inst->bridge_filters[filter_index];
+    cur_filter->enabled   = enable;
+    cur_filter->extended  = extended;
+    cur_filter->block     = block;
+    cur_filter->dest_chan = dest_channel;
+    cur_filter->filter    = filter & mask;
+    cur_filter->mask      = mask;
+
+    bool active = false;
+    for (int F=0; F<MAX_BRIDGE_FILTERS; F++)
+    {
+        if (inst->bridge_filters[F].enabled && !inst->bridge_filters[F].block)
+        {
+            active = true;
+            break;
+        }
+    }
+
+    // The variable bridge_active is only for speed optimization if bridge mode is not used.
+    inst->bridge_active = active;
+    return FBK_Success;
+#else
+    return FBK_UnsupportedFeature; // not a multi-channel adapter
+#endif
+}
+
+#if CHANNEL_COUNT > 1
+// Forward a Rx packet to the channel(s) that are defined in the bridge filter(s)
+void can_forward_bridge_packet(can_class* inst, FDCAN_RxHeaderTypeDef* rx_header, uint8_t* rx_data)
+{
+    bool extended = rx_header->IdType == FDCAN_EXTENDED_ID;
+    uint32_t ID   = rx_header->Identifier;
+
+    bool pass_chan [CHANNEL_COUNT] = {0};
+    bool block_chan[CHANNEL_COUNT] = {0};
+
+    for (int i=0; i<MAX_BRIDGE_FILTERS; i++)
+    {
+        brg_filter* cur_filter = &inst->bridge_filters[i];
+
+        if (cur_filter->enabled &&
+            cur_filter->extended   == extended &&
+           (ID & cur_filter->mask) == cur_filter->filter)
+        {
+            if (cur_filter->block) block_chan[cur_filter->dest_chan] = true;
+            else                   pass_chan [cur_filter->dest_chan] = true;
+        }
+    }
+
+    FDCAN_TxHeaderTypeDef tx_header;
+    tx_header.Identifier          = rx_header->Identifier;
+    tx_header.IdType              = rx_header->IdType;
+    tx_header.TxFrameType         = rx_header->RxFrameType;
+    tx_header.DataLength          = rx_header->DataLength;
+    tx_header.ErrorStateIndicator = rx_header->ErrorStateIndicator;
+    tx_header.TxEventFifoControl  = FDCAN_STORE_TX_EVENTS; // always! Tx Event flashes the Tx LED
+    tx_header.MessageMarker       = 0;                     // no Tx echo for forwarded packets
+
+    for (int C=0; C<CHANNEL_COUNT; C++)
+    {
+        if (!pass_chan[C] || block_chan[C] || !can_is_open(C))
+            continue;
+
+        if (can_using_FD(C))
+        {
+            tx_header.FDFormat      = rx_header->FDFormat;
+            tx_header.BitRateSwitch = rx_header->BitRateSwitch;
+        }
+        else
+        {
+            // a packet with more than 8 data bytes cannot be forwarded to a classic CAN bus
+            if (tx_header.DataLength > 8)
+                continue;
+
+            // convert FD packet into classic packet
+            tx_header.FDFormat      = FDCAN_CLASSIC_CAN;
+            tx_header.BitRateSwitch = FDCAN_BRS_OFF;
+        }
+
+        buf_store_tx_packet(C, &tx_header, rx_data);
+    }
+}
+#endif
 
 // ----------------------------------------------------------------------------------------------
 

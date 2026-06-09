@@ -126,13 +126,22 @@ static inline void list_add_tail_locked(list_item *entry, list_item *head)
 
 // ----------------------------------------------------------------------------------------
 
-typedef struct 
+// sent to host
+typedef struct
 {
     list_item        list;
     kHostFrameLegacy frame;
 } kHostFrameObject;
 
-typedef struct 
+// sent to CAN bus
+typedef struct
+{
+    list_item             list;
+    FDCAN_TxHeaderTypeDef header;
+    uint8_t               data[64];
+} kCanFrameObject;
+
+typedef struct
 {
     // Currently a USB packet is sent to the host --> wait until the bus is free for the next packet.
     __IO bool  TxBusy;
@@ -147,8 +156,8 @@ typedef struct
     // not even an error message could be sent to the host.
     // So the adapter simply stopped responding and was dead.
     // Addionally due to another bug it could even crash when the buffer got full.
-    kHostFrameObject   can_pool_buffer [CAN_QUEUE_SIZE];
-    kHostFrameObject   host_pool_buffer[HOST_QUEUE_SIZE];   
+    kCanFrameObject    can_pool_buffer [CAN_QUEUE_SIZE];
+    kHostFrameObject   host_pool_buffer[HOST_QUEUE_SIZE];
 
     // The frame pool contains 64 kHostFrameObject's
     // These can be taken and appended to list_to_can or list_to_host.
@@ -176,9 +185,12 @@ void buf_init();
 void buf_process(int channel, uint32_t tick_now);
 void buf_clear_can_buffer(int channel);
 void buf_store_error(int channel);
-void buf_store_rx_packet(int channel, FDCAN_RxHeaderTypeDef *rx_header, uint8_t *frame_data);
-void buf_store_tx_echo(int channel, FDCAN_TxEventFifoTypeDef* tx_event);
+void buf_store_can_frame(int channel, kHostFrameLegacy* can_frame);
+void buf_store_tx_packet(int channel, FDCAN_TxHeaderTypeDef* tx_header, uint8_t* tx_data);
+void buf_store_rx_packet(int channel, FDCAN_RxHeaderTypeDef* rx_header, uint8_t *rx_data);
+void buf_store_tx_echo  (int channel, FDCAN_TxEventFifoTypeDef* tx_event);
 buf_class* buf_get_instance(int channel);
 buf_class* buf_get_inst_for_usb(int channel);
-kHostFrameObject* buf_get_frame_locked(list_item* list_head);
+kHostFrameObject* buf_get_host_frame_locked(list_item* list_head);
+kCanFrameObject*  buf_get_can_frame_locked (list_item* list_head);
      

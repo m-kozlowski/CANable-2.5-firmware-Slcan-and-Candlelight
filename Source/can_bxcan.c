@@ -31,7 +31,7 @@
     4. **Filter banks.** bxCAN has 14 filter banks on F072 (single-CAN, no
        slave). We use one bank per user filter in 32-bit ID-mask scale, which
        costs a bit of filter capacity per filter but matches the upper-layer
-       model (one accept-mask filter per call to can_set_mask_filter()).
+       model (one accept-mask filter per call to can_add_host_filter()).
 
     5. **Bus-off recovery.** bxCAN auto-recovers when AutoBusOff is enabled,
        which requires no software action beyond observing the BOF clear. We
@@ -586,13 +586,13 @@ static void can_print_info(int channel)
 // for user-visible matches; non-matching frames go to FIFO 1 via the
 // catch-all filter installed when no user filters are defined.)
 
-eFeedback can_set_mask_filter(int channel, bool extended, uint32_t filter, uint32_t mask)
+eFeedback can_add_host_filter(int channel, bool extended, uint32_t filter, uint32_t mask)
 {
     can_class* inst = &can_inst[channel];
 
     int tot_filters = inst->std_filter_count + inst->ext_filter_count;
-    if (tot_filters >= MAX_FILTERS)
-        return FBK_InvalidParameter;
+    if (tot_filters >= MAX_HOST_FILTERS)
+        return FBK_ParamOutOfRange;
 
     uint32_t maximum = extended ? 0x1FFFFFFFU : 0x7FFU;
     if (filter > maximum || mask > maximum)
@@ -609,7 +609,7 @@ eFeedback can_set_mask_filter(int channel, bool extended, uint32_t filter, uint3
         tot_filters = 0;
     }
 
-    FDCAN_FilterTypeDef* last_filter = &inst->filters[tot_filters];
+    FDCAN_FilterTypeDef* last_filter = &inst->host_filters[tot_filters];
     last_filter->IdType       = extended ? FDCAN_EXTENDED_ID : FDCAN_STANDARD_ID;
     last_filter->FilterIndex  = extended ? inst->ext_filter_count : inst->std_filter_count;
     last_filter->FilterType   = FDCAN_FILTER_MASK;
@@ -626,7 +626,7 @@ eFeedback can_set_mask_filter(int channel, bool extended, uint32_t filter, uint3
     return FBK_Success;
 }
 
-eFeedback can_clear_filters(int channel)
+eFeedback can_clear_host_filters(int channel)
 {
     can_class* inst = &can_inst[channel];
     if (inst->is_open)
@@ -635,6 +635,14 @@ eFeedback can_clear_filters(int channel)
     inst->ext_filter_count = 0;
     inst->std_filter_count = 0;
     return FBK_Success;
+}
+
+// CAN bridging requires >= 2 channels; the bxCAN parts (F0) are single-channel,
+// so this is always an unsupported no-op here. Provided to satisfy the can.h API.
+eFeedback can_set_bridge_filter(int src_channel, int dest_channel, uint8_t filter_index,
+                                bool enable, bool extended, bool block, uint32_t filter, uint32_t mask)
+{
+    return FBK_UnsupportedFeature; // not a multi-channel adapter
 }
 
 // Encode a (filter, mask, IDE, RTR) into the bxCAN 32-bit IDR layout used by
@@ -674,7 +682,7 @@ static bool can_apply_filters(can_class* inst)
     // First: install the user filters into FIFO 0.
     for (int i=0; i<tot_filters; i++)
     {
-        FDCAN_FilterTypeDef* f = &inst->filters[i];
+        FDCAN_FilterTypeDef* f = &inst->host_filters[i];
         bool extended = (f->IdType == FDCAN_EXTENDED_ID);
 
         encode_filter_32bit(extended, f->FilterID1, f->FilterID2,
