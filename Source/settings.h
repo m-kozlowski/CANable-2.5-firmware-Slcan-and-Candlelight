@@ -242,9 +242,11 @@ typedef enum // sent as 8 bit
     #define CAN_PORTS           GPIOB,                   GPIOB                   // CANFD Port
     #define CAN_ALTERNATES      GPIO_AF9_FDCAN1,         GPIO_AF9_FDCAN2  // switch pin multiplexer to CAN module
     // -------------------
-    #define LED_TX_PINS         GPIO_PIN_5,              GPIO_PIN_3
+    // TX/RX swapped vs the original baseline to match the physical silkscreen
+    // (verified upstream in 09db90c: PA6/PA4 = yellow = TX, PA5/PA3 = blue = RX).
+    #define LED_TX_PINS         GPIO_PIN_6,              GPIO_PIN_4 // yellow
     #define LED_TX_PORTS        GPIOA,                   GPIOA
-    #define LED_RX_PINS         GPIO_PIN_6,              GPIO_PIN_4
+    #define LED_RX_PINS         GPIO_PIN_5,              GPIO_PIN_3 // blue
     #define LED_RX_PORTS        GPIOA,                   GPIOA
     // -------------------
     #define TERMINATOR_PINS     -1,                      -1  // termination resistor is switched by a manual jumper
