@@ -304,7 +304,7 @@ static void can_process_tx(int channel)
         led_flash_TX(channel);
 
         // Build the Tx event the upper layer expects.
-        if (GLB_UserFlags[channel] & USR_ReportTX)
+        if (GLB_UserFlags[channel] & USR_TxEcho)
         {
             FDCAN_TxEventFifoTypeDef ev = {0};
             ev.MessageMarker = tx_marker[channel][i];

@@ -90,13 +90,16 @@ typedef enum // transferred as 32 bit
     // ATTENTION: This flag enables the Elm�Soft protocol for ALL channels and it stays enabled until all channels have been closed!
     // This flag also enables debug reports (USR_DebugReport).
     // In the Capabilities this flag means that all ELM_ReqXXX commands are supported.
-    ELM_DevFlagProtocolElmue          = 0x04000, 
-    // Do not send an echo for the successfully sent CAN packets (by default this is enabled in the Candlelight firmware)
-    // The Tx event packet is sent in the moment when the ACK was recived. You can turn this off to reduce USB traffic.
-    ELM_DevFlagDisableTxEcho          = 0x08000,
+    ELM_DevFlagProtocolElmue          = 0x04000, // bit 14
+
+    // BREAKING (firmware 29.may.2026): the former ELM_DevFlagDisableTxEcho (bit 15)
+    // has been removed. Tx echo is now controlled per packet: send kTxFrameElmue.marker = 0
+    // to suppress the Tx echo. Tx markers are only valid from 0x01 to 0xFF.
+//  ELM_DevFlagDisableTxEcho          = 0x08000, // bit 15 (removed)
+
     // IN:  If there are multiple CAN Rx packets waiting in the FIFO buffer -> optimize USB transfer by sendig them together in a blob.
     // OUT: The host can always send multiple CAN Tx frames with kBlob and MSG_TxBlob even without setting this flag.
-    ELM_DevFlagSendUsbBlobs           = 0x10000,
+    ELM_DevFlagSendUsbBlobs           = 0x08000, // bit 15
 } eDeviceFlags;
 
 // ==============================================================================
@@ -542,7 +545,7 @@ typedef enum // 8 bit
     // received from host
     MSG_TxFrame = 10, // 0x0A the message contains a CAN frame to be sent to CAN bus (kTxFrameElmue)
     // sent to host
-    MSG_TxEcho,       // 0x0B the message contains the echo marker of a Tx CAN frame (kTxEchoElmue, can be disabled with ELM_DevFlagDisableTxEcho)
+    MSG_TxEcho,       // 0x0B the message contains the echo marker of a Tx CAN frame (kTxEchoElmue, only sent if Tx marker > 0)
     MSG_RxFrame,      // 0x0C the message contains a received CAN frame from CAN bus (kRxFrameElmue)
     MSG_Error,        // 0x0D the message contains multiple error flags (kErrorElmue, same format as legacy protocol, see buf_store_error())
     MSG_String,       // 0x0E the message contains an ASCII string to be displayed to the user (kStringElmue)

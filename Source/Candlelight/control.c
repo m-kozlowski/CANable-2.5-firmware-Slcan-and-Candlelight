@@ -58,7 +58,6 @@ void control_init()
                                    GS_DevFlagTimestamp      |
                                    GS_DevFlagIdentify       |
                                    ELM_DevFlagProtocolElmue |
-                                   ELM_DevFlagDisableTxEcho |
                                    ELM_DevFlagSendUsbBlobs;
 #if !defined(CAN_FAMILY_BXCAN)
     // CAN FD is only available on FDCAN-equipped MCUs (G4 family). The bxCAN
@@ -406,9 +405,10 @@ void control_setup_OUT_data(USBD_HandleTypeDef *pdev)
             // ----------------
 
             GLB_UserFlags[channel] = USR_CandleDefault; // reset channel flags to their default
-            if (dev_Mode->flags &  GS_DevFlagOneShot)       GLB_UserFlags[channel] &= ~USR_Retransmit;
-            if (dev_Mode->flags &  GS_DevFlagTimestamp)     GLB_UserFlags[channel] |=  USR_Timestamp;
-            if (dev_Mode->flags & ELM_DevFlagDisableTxEcho) GLB_UserFlags[channel] &= ~USR_ReportTX;
+            if (dev_Mode->flags & GS_DevFlagOneShot)   GLB_UserFlags[channel] &= ~USR_Retransmit;
+            if (dev_Mode->flags & GS_DevFlagTimestamp) GLB_UserFlags[channel] |=  USR_Timestamp;
+            // Tx echo is now controlled per packet via the Tx marker (marker 0 = no echo),
+            // so the former ELM_DevFlagDisableTxEcho handling has been removed.
 
             if (GLB_ProtoElmue)
             {
